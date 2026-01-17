@@ -305,20 +305,39 @@ function M.parse_input_sources()
     -- Use defaults and parse the plist output
     local result = execute_command("defaults read ~/Library/Preferences/com.apple.HIToolbox.plist AppleEnabledInputSources")
     if result then
-      -- Extract "InputSourceID" values from the plist
+      -- Extract InputSourceID entries
       for id in result:gmatch('"InputSourceID"%s*=%s*"([^"]+)"') do
-        table.insert(sources, { id = id, name = id })
+        -- Extract a friendly name from the ID if possible
+        local name = id:match("%.([^.]+)$") or id
+        table.insert(sources, { id = id, name = name })
       end
-      -- Also extract "KeyboardLayout ID" and "KeyboardLayout Name"
-      local i = 1
-      for id in result:gmatch('"KeyboardLayout ID"%s*=%s*([^;]+)') do
-        local name = result:match('"KeyboardLayout Name"%s*=%s*"([^"]+)"', i)
-        if id and id:match("^%d+$") then
-          -- Convert numeric ID to input source format
-          local source_id = "com.apple.keylayout." .. (name or id)
-          table.insert(sources, { id = source_id, name = name or source_id })
+
+      -- Extract KeyboardLayout entries with proper name matching
+      local entries = {}
+      for block in result:gmatch("{[^}]+}") do
+        local layout_id = block:match('"KeyboardLayout ID"%s*=%s*(%d+)')
+        local layout_name = block:match('"KeyboardLayout Name"%s*=%s*([^;]+)')
+
+        if layout_id and layout_name then
+          -- Clean up the name (remove quotes and semicolons)
+          layout_name = layout_name:gsub('"', ''):gsub(';', ''):gsub('%s+$', '')
+          local source_id = "com.apple.keylayout." .. layout_id
+          table.insert(entries, { id = source_id, name = layout_name .. " (" .. source_id .. ")" })
         end
-        i = i + 1
+      end
+
+      -- Add keyboard layout entries
+      for _, entry in ipairs(entries) do
+        table.insert(sources, entry)
+      end
+
+      -- Extract Input Mode entries
+      for block in result:gmatch("{[^}]+}") do
+        local input_mode = block:match('"Input Mode"%s*=%s*"([^"]+)"')
+        if input_mode and not block:match('"InputSourceID"') then
+          local name = input_mode:match("%.([^.]+)$") or input_mode
+          table.insert(sources, { id = input_mode, name = name .. " (" .. input_mode .. ")" })
+        end
       end
     end
   end
