@@ -27,12 +27,14 @@ local function ime_control_macos(action)
   -- External CLI tools: macime, macism, im-select
   if tool == "macime" then
     if action == "off" then
-      return vim.fn.system("macime set " .. en_source)
+      -- Switch to English and save current IME for later restore
+      return vim.fn.system("macime set " .. en_source .. " --save")
     elseif action == "on" then
-      return vim.fn.system("macime set " .. ja_source)
+      -- Restore previously saved IME
+      return vim.fn.system("macime load")
     elseif action == "status" then
       local result = execute_command("macime get")
-      return result and (result:match("Japanese") or result:match("Hiragana") or result:match("Katakana") or result:match(ja_source)) ~= nil
+      return result and (result:match("Japanese") or result:match("Hiragana") or result:match("Katakana")) ~= nil
     end
   elseif tool == "macism" then
     if action == "off" then
