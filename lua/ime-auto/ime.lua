@@ -1,21 +1,57 @@
 local M = {}
 
 local last_ime_state = false
+local tool_check_done = {}
 
 local function execute_command(cmd)
   if not cmd then
     return nil
   end
-  
+
   local handle = io.popen(cmd)
   if not handle then
     return nil
   end
-  
+
   local result = handle:read("*a")
   handle:close()
-  
+
   return result and result:gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function check_tool_availability(tool)
+  if tool_check_done[tool] then
+    return true
+  end
+
+  local is_available = vim.fn.executable(tool) == 1
+
+  if not is_available then
+    local install_instructions = {
+      ["macime"] = "brew install macime (https://github.com/riodelphino/macime)",
+      ["macism"] = "brew install macism (https://github.com/laishulu/macism)",
+      ["im-select"] = "brew tap daipeihust/tap && brew install im-select"
+    }
+
+    local instruction = install_instructions[tool] or ("Install " .. tool)
+
+    vim.notify(
+      string.format(
+        "[ime-auto] Error: '%s' command not found\n\n" ..
+        "To use %s, please install it first:\n" ..
+        "  %s\n\n" ..
+        "Or change macos_ime_tool setting:\n" ..
+        '  macos_ime_tool = "macime"  -- Recommended\n' ..
+        '  macos_ime_tool = nil       -- Use default osascript',
+        tool, tool, instruction
+      ),
+      vim.log.levels.ERROR
+    )
+    return false
+  end
+
+  tool_check_done[tool] = true
+  return true
 end
 
 local function ime_control_macos(action)
@@ -26,6 +62,9 @@ local function ime_control_macos(action)
 
   -- External CLI tools: macime, macism, im-select
   if tool == "macime" then
+    if not check_tool_availability("macime") then
+      return nil
+    end
     if action == "off" then
       -- Switch to English and save current IME for later restore
       return vim.fn.system("macime set " .. en_source .. " --save")
@@ -40,6 +79,20 @@ local function ime_control_macos(action)
       return (result:match("Japanese") or result:match("Hiragana") or result:match("Katakana")) ~= nil
     end
   elseif tool == "macism" then
+    if not check_tool_availability("macism") then
+      return nil
+    end
+    if not ja_source then
+      vim.notify(
+        "[ime-auto] Error: macos_input_source_ja is not configured\n\n" ..
+        "macism requires Japanese input source ID. Please run:\n" ..
+        "  :ImeAutoSetup\n\n" ..
+        "Or manually configure in your init.lua:\n" ..
+        '  macos_input_source_ja = "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese"',
+        vim.log.levels.ERROR
+      )
+      return nil
+    end
     if action == "off" then
       return vim.fn.system("macism " .. en_source)
     elseif action == "on" then
@@ -56,6 +109,20 @@ local function ime_control_macos(action)
       return is_japanese ~= nil
     end
   elseif tool == "im-select" then
+    if not check_tool_availability("im-select") then
+      return nil
+    end
+    if not ja_source then
+      vim.notify(
+        "[ime-auto] Error: macos_input_source_ja is not configured\n\n" ..
+        "im-select requires Japanese input source ID. Please run:\n" ..
+        "  :ImeAutoSetup\n\n" ..
+        "Or manually configure in your init.lua:\n" ..
+        '  macos_input_source_ja = "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese"',
+        vim.log.levels.ERROR
+      )
+      return nil
+    end
     if action == "off" then
       return vim.fn.system("im-select " .. en_source)
     elseif action == "on" then
