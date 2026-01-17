@@ -12,3 +12,6 @@ test_config.lua
 # IDE
 .idea/
 .vscode/
+
+# vibing.nvim
+.vibing/
