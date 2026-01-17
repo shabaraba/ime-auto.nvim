@@ -96,9 +96,13 @@ macismは、CJKV入力ソースの切り替えが最も確実なツールです�
 ```lua
 require("ime-auto").setup({
   macos_ime_tool = "macism",
-  -- 注意：macismは日本語IME IDの明示的な指定が必要です
-  -- 下の「入力ソースIDの確認方法」を参照してください
 })
+```
+
+**初回セットアップ**: プラグイン読み込み後、以下のコマンドで入力ソースを設定してください：
+```vim
+:ImeAutoSelectEnglishInput    " 英語入力ソースを選択
+:ImeAutoSelectJapaneseInput   " 日本語入力ソースを選択
 ```
 
 インストール: [laishulu/macism](https://github.com/laishulu/macism)
@@ -108,18 +112,34 @@ require("ime-auto").setup({
 ```lua
 require("ime-auto").setup({
   macos_ime_tool = "im-select",
-  -- 注意：im-selectも日本語IME IDの明示的な指定が必要です
-  -- 下の「入力ソースIDの確認方法」を参照してください
 })
+```
+
+**初回セットアップ**: プラグイン読み込み後、以下のコマンドで入力ソースを設定してください：
+```vim
+:ImeAutoSelectEnglishInput    " 英語入力ソースを選択
+:ImeAutoSelectJapaneseInput   " 日本語入力ソースを選択
 ```
 
 インストール: [daipeihust/im-select](https://github.com/daipeihust/im-select)
 
-#### 入力ソースIDの確認方法
+#### 入力ソースIDの確認・設定方法
 
 **macism/im-selectを使用する場合**は、日本語IME IDを明示的に設定する必要があります。
 
-##### 方法1: プラグインのコマンドを使用（簡単）
+##### 方法1: 対話的に選択（最も簡単！）
+
+Neovim内で以下のコマンドを実行：
+
+```vim
+:ImeAutoSelectEnglishInput    " 英語入力ソースを選択
+:ImeAutoSelectJapaneseInput   " 日本語入力ソースを選択
+```
+
+利用可能な入力ソース一覧が表示され、選択するとその場で設定されます。
+**注意**: この設定はNeovimセッション中のみ有効です。永続化するには、選択後に表示されるIDを設定ファイルに記載してください。
+
+##### 方法2: 入力ソース一覧を表示
 
 Neovim内で以下のコマンドを実行：
 
@@ -127,9 +147,9 @@ Neovim内で以下のコマンドを実行：
 :ImeAutoListInputSources
 ```
 
-利用可能な入力ソース一覧が表示されます。
+利用可能な入力ソース一覧が表示されます。IDをコピーして設定ファイルに貼り付けてください。
 
-##### 方法2: ターミナルで確認
+##### 方法3: ターミナルで確認
 
 ```bash
 # macimeがインストールされている場合
@@ -156,11 +176,18 @@ require("ime-auto").setup({
 
 ## コマンド
 
+### 基本コマンド
+
 - `:ImeAutoEnable` - IME自動切り替えを有効化
 - `:ImeAutoDisable` - IME自動切り替えを無効化
 - `:ImeAutoToggle` - IME自動切り替えのトグル
 - `:ImeAutoStatus` - 現在の状態を表示
-- `:ImeAutoListInputSources` - 利用可能な入力ソース一覧を表示（macOS専用）
+
+### 入力ソース設定コマンド（macOS専用）
+
+- `:ImeAutoSelectEnglishInput` - 英語入力ソースを対話的に選択
+- `:ImeAutoSelectJapaneseInput` - 日本語入力ソースを対話的に選択（macism/im-select使用時）
+- `:ImeAutoListInputSources` - 利用可能な入力ソース一覧を表示
 
 ## 動作原理
 

@@ -7,6 +7,7 @@ M.defaults = {
   ime_method = "builtin",
   macos_ime_tool = nil, -- nil (default: osascript), "macime", "macism", or "im-select"
   macos_input_source_en = "com.apple.keylayout.ABC", -- English input source ID (used when IME off)
+  macos_input_source_ja = nil, -- Japanese input source ID (required for macism/im-select, optional for macime)
   custom_commands = {
     on = nil,
     off = nil,
@@ -45,6 +46,14 @@ end
 
 function M.get()
   return M.options
+end
+
+function M.set_input_source_en(source_id)
+  M.options.macos_input_source_en = source_id
+end
+
+function M.set_input_source_ja(source_id)
+  M.options.macos_input_source_ja = source_id
 end
 
 return M

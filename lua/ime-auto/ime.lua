@@ -188,4 +188,49 @@ function M.list_input_sources()
   return result
 end
 
+-- Parse input source list and return array of {id, name} tables
+function M.parse_input_sources()
+  local config = require("ime-auto.config").get()
+
+  if config.os ~= "macos" then
+    return nil, "This feature is only available on macOS"
+  end
+
+  local tool = config.macos_ime_tool
+  local sources = {}
+
+  if tool == "macime" then
+    local result = execute_command("macime list")
+    if result then
+      for line in result:gmatch("[^\r\n]+") do
+        if line and line ~= "" then
+          table.insert(sources, { id = line, name = line })
+        end
+      end
+    end
+  else
+    -- Use defaults and parse the plist output
+    local result = execute_command("defaults read ~/Library/Preferences/com.apple.HIToolbox.plist AppleEnabledInputSources")
+    if result then
+      -- Extract "InputSourceID" values from the plist
+      for id in result:gmatch('"InputSourceID"%s*=%s*"([^"]+)"') do
+        table.insert(sources, { id = id, name = id })
+      end
+      -- Also extract "KeyboardLayout ID" and "KeyboardLayout Name"
+      local i = 1
+      for id in result:gmatch('"KeyboardLayout ID"%s*=%s*([^;]+)') do
+        local name = result:match('"KeyboardLayout Name"%s*=%s*"([^"]+)"', i)
+        if id and id:match("^%d+$") then
+          -- Convert numeric ID to input source format
+          local source_id = "com.apple.keylayout." .. (name or id)
+          table.insert(sources, { id = source_id, name = name or source_id })
+        end
+        i = i + 1
+      end
+    end
+  end
+
+  return sources
+end
+
 return M
