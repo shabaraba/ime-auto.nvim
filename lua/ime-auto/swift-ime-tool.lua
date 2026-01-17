@@ -52,6 +52,25 @@ end
 -- Swift source code for IME control (lazy-loaded)
 local swift_source = nil
 
+-- Check if recompilation is needed based on source mtime
+local function needs_recompilation(source_path, binary_path)
+  local source_mtime = vim.fn.getftime(source_path)
+  local binary_mtime = vim.fn.getftime(binary_path)
+
+  -- Binary doesn't exist
+  if binary_mtime == -1 then
+    return true
+  end
+
+  -- Source doesn't exist (shouldn't happen)
+  if source_mtime == -1 then
+    return false
+  end
+
+  -- Source is newer than binary
+  return source_mtime > binary_mtime
+end
+
 -- Compile Swift tool if not already compiled
 function M.ensure_compiled()
   if swift_bin_path and vim.fn.filereadable(swift_bin_path) == 1 then
@@ -66,9 +85,12 @@ function M.ensure_compiled()
   -- Create directory if it doesn't exist
   vim.fn.mkdir(ime_dir, 'p')
 
-  -- Check if binary already exists and is recent
+  -- Check if binary already exists and is up-to-date
   if vim.fn.filereadable(swift_bin_path) == 1 then
-    return true
+    local swift_src_path = get_swift_source_path()
+    if not needs_recompilation(swift_src_path, swift_bin_path) then
+      return true
+    end
   end
 
   -- Lazy-load Swift source code on first compile
@@ -117,6 +139,17 @@ function M.get_current()
 end
 
 function M.switch_to(source_id)
+  -- Validate input source ID format to prevent injection
+  if not source_id or type(source_id) ~= "string" then
+    return false
+  end
+
+  -- Input source IDs should only contain alphanumeric, dots, hyphens, and underscores
+  if not source_id:match("^[%w%.%-_]+$") then
+    vim.notify("[ime-auto] Invalid input source ID format: " .. source_id, vim.log.levels.ERROR)
+    return false
+  end
+
   local _, success = run_swift_command(source_id)
   return success
 end

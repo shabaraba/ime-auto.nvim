@@ -3,13 +3,24 @@ import Foundation
 
 // Get save file paths and ensure directory exists
 func getSaveFilePath(slot: String = "current") -> URL {
+    // Validate slot parameter to prevent path traversal
+    let validSlotPattern = "^[a-zA-Z0-9_-]+$"
+    guard let regex = try? NSRegularExpression(pattern: validSlotPattern),
+          regex.firstMatch(in: slot, range: NSRange(slot.startIndex..., in: slot)) != nil else {
+        fputs("Error: Invalid slot name. Only alphanumeric, underscore, and dash allowed.\n", stderr)
+        exit(1)
+    }
+
     let homeDir = FileManager.default.homeDirectoryForCurrentUser
     let nvimDataDir = homeDir.appendingPathComponent(".local/share/nvim/ime-auto")
 
-    // Create directory if it doesn't exist
+    // Create directory if it doesn't exist with secure permissions
     if !FileManager.default.fileExists(atPath: nvimDataDir.path) {
         do {
-            try FileManager.default.createDirectory(at: nvimDataDir, withIntermediateDirectories: true, attributes: nil)
+            let attributes: [FileAttributeKey: Any] = [
+                .posixPermissions: 0o700  // Owner read/write/execute only
+            ]
+            try FileManager.default.createDirectory(at: nvimDataDir, withIntermediateDirectories: true, attributes: attributes)
         } catch {
             fputs("Error: Failed to create directory \(nvimDataDir.path): \(error)\n", stderr)
             exit(1)
@@ -59,6 +70,8 @@ if command == "list" {
         let slotA = getSaveFilePath(slot: "a")
         do {
             try id.write(to: slotA, atomically: true, encoding: .utf8)
+            // Set secure file permissions (owner read/write only)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: slotA.path)
         } catch {
             fputs("Error: Failed to write slot A: \(error.localizedDescription)\n", stderr)
             exit(1)
@@ -105,6 +118,8 @@ if command == "list" {
         let slotB = getSaveFilePath(slot: "b")
         do {
             try id.write(to: slotB, atomically: true, encoding: .utf8)
+            // Set secure file permissions (owner read/write only)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: slotB.path)
         } catch {
             fputs("Error: Failed to write slot B: \(error.localizedDescription)\n", stderr)
             exit(1)
@@ -175,6 +190,8 @@ if command == "list" {
         // Save current to slot B, switch to slot A (if exists)
         do {
             try current.write(to: slotB, atomically: true, encoding: .utf8)
+            // Set secure file permissions (owner read/write only)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: slotB.path)
         } catch {
             fputs("Error: Failed to write slot B: \(error.localizedDescription)\n", stderr)
             exit(1)
@@ -213,6 +230,8 @@ if command == "list" {
         let saveFile = getSaveFilePath(slot: "a")
         do {
             try id.write(to: saveFile, atomically: true, encoding: .utf8)
+            // Set secure file permissions (owner read/write only)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: saveFile.path)
         } catch {
             fputs("Error: Failed to write slot A: \(error.localizedDescription)\n", stderr)
             exit(1)
@@ -226,6 +245,8 @@ if command == "list" {
         let saveFile = getSaveFilePath(slot: "b")
         do {
             try id.write(to: saveFile, atomically: true, encoding: .utf8)
+            // Set secure file permissions (owner read/write only)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: saveFile.path)
         } catch {
             fputs("Error: Failed to write slot B: \(error.localizedDescription)\n", stderr)
             exit(1)

@@ -2,6 +2,17 @@ local M = {}
 
 local last_ime_state = nil
 
+-- IME state cache with TTL
+local ime_state_cache = {
+  value = nil,
+  timestamp = 0,
+  ttl_ms = 500  -- Cache for 500ms
+}
+
+-- Debounce timer for mode changes
+local mode_change_timer = nil
+local MODE_CHANGE_DEBOUNCE_MS = 100
+
 local function trim(str)
   if not str then return nil end
   return str:gsub("^%s+", ""):gsub("%s+$", "")
@@ -110,8 +121,32 @@ function M.control(action)
   return result
 end
 
+-- Debounced version of off()
+function M.off_debounced()
+  if mode_change_timer then
+    vim.fn.timer_stop(mode_change_timer)
+  end
+
+  mode_change_timer = vim.fn.timer_start(MODE_CHANGE_DEBOUNCE_MS, function()
+    M.control("off")
+    mode_change_timer = nil
+  end)
+end
+
 function M.off()
   M.control("off")
+end
+
+-- Debounced version of on()
+function M.on_debounced()
+  if mode_change_timer then
+    vim.fn.timer_stop(mode_change_timer)
+  end
+
+  mode_change_timer = vim.fn.timer_start(MODE_CHANGE_DEBOUNCE_MS, function()
+    M.control("on")
+    mode_change_timer = nil
+  end)
 end
 
 function M.on()
@@ -119,12 +154,26 @@ function M.on()
 end
 
 function M.get_status()
-  local result = M.control("status")
-  if type(result) == "boolean" then
-    return result
-  else
-    return last_ime_state
+  -- Check cache first
+  local now = vim.loop.now()
+  if ime_state_cache.value ~= nil and (now - ime_state_cache.timestamp) < ime_state_cache.ttl_ms then
+    return ime_state_cache.value
   end
+
+  -- Cache miss - get actual status
+  local result = M.control("status")
+  local status = nil
+  if type(result) == "boolean" then
+    status = result
+  else
+    status = last_ime_state
+  end
+
+  -- Update cache
+  ime_state_cache.value = status
+  ime_state_cache.timestamp = now
+
+  return status
 end
 
 function M.save_state()
