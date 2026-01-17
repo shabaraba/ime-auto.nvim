@@ -1,10 +1,21 @@
 import Carbon
 import Foundation
 
-// Get save file paths
+// Get save file paths and ensure directory exists
 func getSaveFilePath(slot: String = "current") -> URL {
     let homeDir = FileManager.default.homeDirectoryForCurrentUser
     let nvimDataDir = homeDir.appendingPathComponent(".local/share/nvim/ime-auto")
+
+    // Create directory if it doesn't exist
+    if !FileManager.default.fileExists(atPath: nvimDataDir.path) {
+        do {
+            try FileManager.default.createDirectory(at: nvimDataDir, withIntermediateDirectories: true, attributes: nil)
+        } catch {
+            fputs("Error: Failed to create directory \(nvimDataDir.path): \(error)\n", stderr)
+            exit(1)
+        }
+    }
+
     return nvimDataDir.appendingPathComponent("saved-ime-\(slot).txt")
 }
 
@@ -70,8 +81,11 @@ if command == "list" {
                 }
             }
         }
+        // No matching input source found
+        fputs("Error: Input source not found: \(target)\n", stderr)
+        exit(1)
     }
-    exit(0)
+    exit(1)
 
 } else if command == "toggle-from-normal" {
     // Toggle from Normal mode: save current to slot B, switch to slot A
@@ -108,8 +122,11 @@ if command == "list" {
                 }
             }
         }
+        // No matching input source found
+        fputs("Error: Input source not found: \(target)\n", stderr)
+        exit(1)
     }
-    exit(0)
+    exit(1)
 
 } else if command == "toggle" {
     // Toggle between two saved IME states
@@ -168,7 +185,11 @@ if command == "list" {
                 }
             }
         }
+        // No matching input source found
+        fputs("Error: Input source not found: \(target)\n", stderr)
+        exit(1)
     }
+    exit(1)
 } else if command == "save-insert" {
     // Save current input source to slot A (insert mode IME)
     let current = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
@@ -199,4 +220,7 @@ if command == "list" {
             }
         }
     }
+    // No matching input source found
+    fputs("Error: Input source not found: \(targetID)\n", stderr)
+    exit(1)
 }

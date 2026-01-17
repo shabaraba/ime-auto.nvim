@@ -34,15 +34,15 @@ local function load_swift_source()
   local swift_path = get_swift_source_path()
   local file = io.open(swift_path, 'r')
   if not file then
-    error("Swift source file not found: " .. swift_path)
+    return nil, "Swift source file not found: " .. swift_path
   end
   local content = file:read('*a')
   file:close()
-  return content
+  return content, nil
 end
 
--- Swift source code for IME control (loaded from swift/ime-tool.swift)
-local swift_source = load_swift_source()
+-- Swift source code for IME control (lazy-loaded)
+local swift_source = nil
 
 -- Compile Swift tool if not already compiled
 function M.ensure_compiled()
@@ -61,6 +61,15 @@ function M.ensure_compiled()
   -- Check if binary already exists and is recent
   if vim.fn.filereadable(swift_bin_path) == 1 then
     return true
+  end
+
+  -- Lazy-load Swift source code on first compile
+  if not swift_source then
+    local err
+    swift_source, err = load_swift_source()
+    if not swift_source then
+      return false, err
+    end
   end
 
   -- Write Swift source code
