@@ -19,13 +19,49 @@ local function execute_command(cmd)
 end
 
 local function ime_control_macos(action)
-  if action == "off" then
-    return vim.fn.system("osascript -e 'tell application \"System Events\" to key code 102'")
-  elseif action == "on" then
-    return vim.fn.system("osascript -e 'tell application \"System Events\" to key code 104'")
-  elseif action == "status" then
-    local result = execute_command("defaults read ~/Library/Preferences/com.apple.HIToolbox.plist AppleSelectedInputSources 2>/dev/null | grep -E 'Japanese|Hiragana|Katakana' | wc -l")
-    return result and tonumber(result) > 0
+  local config = require("ime-auto.config").get()
+  local tool = config.macos_ime_tool
+  local en_source = config.macos_input_source_en
+  local ja_source = config.macos_input_source_ja
+
+  -- External CLI tools: macime, macism, im-select
+  if tool == "macime" then
+    if action == "off" then
+      return vim.fn.system("macime set " .. en_source)
+    elseif action == "on" then
+      return vim.fn.system("macime set " .. ja_source)
+    elseif action == "status" then
+      local result = execute_command("macime get")
+      return result and (result:match("Japanese") or result:match("Hiragana") or result:match("Katakana") or result:match(ja_source)) ~= nil
+    end
+  elseif tool == "macism" then
+    if action == "off" then
+      return vim.fn.system("macism " .. en_source)
+    elseif action == "on" then
+      return vim.fn.system("macism " .. ja_source)
+    elseif action == "status" then
+      local result = execute_command("macism")
+      return result and (result:match("Japanese") or result:match("Hiragana") or result:match("Katakana") or result:match(ja_source)) ~= nil
+    end
+  elseif tool == "im-select" then
+    if action == "off" then
+      return vim.fn.system("im-select " .. en_source)
+    elseif action == "on" then
+      return vim.fn.system("im-select " .. ja_source)
+    elseif action == "status" then
+      local result = execute_command("im-select")
+      return result and (result:match("Japanese") or result:match("Hiragana") or result:match("Katakana") or result:match(ja_source)) ~= nil
+    end
+  else
+    -- Default: osascript (built-in)
+    if action == "off" then
+      return vim.fn.system("osascript -e 'tell application \"System Events\" to key code 102'")
+    elseif action == "on" then
+      return vim.fn.system("osascript -e 'tell application \"System Events\" to key code 104'")
+    elseif action == "status" then
+      local result = execute_command("defaults read ~/Library/Preferences/com.apple.HIToolbox.plist AppleSelectedInputSources 2>/dev/null | grep -E 'Japanese|Hiragana|Katakana' | wc -l")
+      return result and tonumber(result) > 0
+    end
   end
 end
 

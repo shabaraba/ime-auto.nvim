@@ -25,10 +25,8 @@ local function create_autocmds()
     callback = function()
       if enabled then
         M.ime.save_state()
-        vim.schedule(function()
-          M.ime.off()
-          M.utils.notify("IME turned off", vim.log.levels.DEBUG)
-        end)
+        M.ime.off()
+        M.utils.notify("IME turned off", vim.log.levels.DEBUG)
       end
     end,
   })
@@ -38,10 +36,8 @@ local function create_autocmds()
     pattern = {"*:[nvV\22]", "*:c"},
     callback = function()
       if enabled then
-        vim.schedule(function()
-          M.ime.off()
-          M.utils.notify("IME turned off (mode change)", vim.log.levels.DEBUG)
-        end)
+        M.ime.off()
+        M.utils.notify("IME turned off (mode change)", vim.log.levels.DEBUG)
       end
     end,
   })
