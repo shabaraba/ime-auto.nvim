@@ -1,6 +1,21 @@
+--- Swift IME Tool Integration Module
+---
+--- This module provides integration with the Swift-based IME control tool for macOS.
+--- It handles:
+--- - Swift tool compilation and caching (with mtime-based recompilation detection)
+--- - IME state detection and switching via Carbon APIs
+--- - Slot-based IME state management (slot A: Insert mode, slot B: Normal mode)
+--- - Error handling and retry logic
+--- - Input validation for security
+---
+--- @module ime-auto.swift-ime-tool
+
 local M = {}
 
 local swift_bin_path = nil
+
+-- Constants
+local SYSTEM_CALL_TIMEOUT_MS = 5000  -- 5 second timeout for Swift tool calls
 
 local function run_swift_command(args)
   local ok, err = M.ensure_compiled()

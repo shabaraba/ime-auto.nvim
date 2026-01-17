@@ -1,3 +1,19 @@
+--- IME Control Module
+---
+--- This module provides cross-platform IME (Input Method Editor) control functionality.
+--- It supports:
+--- - macOS (via Swift tool using Carbon APIs)
+--- - Windows (via PowerShell)
+--- - Linux (via fcitx-remote or ibus)
+---
+--- Features:
+--- - Toggle-based IME switching with slot management
+--- - IME state caching (500ms TTL) to reduce system calls
+--- - Debounced mode change handlers (100ms) for performance
+--- - Automatic platform detection
+---
+--- @module ime-auto.ime
+
 local M = {}
 
 local last_ime_state = nil
