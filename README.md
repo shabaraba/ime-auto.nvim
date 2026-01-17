@@ -8,7 +8,8 @@ Neovimで日本語入力時のIME（Input Method Editor）を自動的に制御�
 - normalモード、visualモード、commandモードでは自動的にIMEをOFF
 - insertモードに入る際、前回のIME状態を自動復元
 - macOS、Windows、Linuxに対応
-- 外部ツール不要（OS標準機能を使用）
+- OS標準機能を使用（外部ツール不要）
+- macOSでは高速な外部CLIツール（macime、macism、im-select）にも対応
 
 ## インストール
 
@@ -25,6 +26,7 @@ Neovimで日本語入力時のIME（Input Method Editor）を自動的に制御�
       escape_timeout = 200,      -- タイムアウト（ミリ秒）
       os = "auto",              -- OS設定: "auto", "macos", "windows", "linux"
       ime_method = "builtin",   -- IME制御方法: "builtin", "custom"
+      macos_ime_tool = nil,     -- macOS: nil (osascript), "macime", "macism", "im-select"
       debug = false,            -- デバッグモード
     })
   end,
@@ -67,20 +69,123 @@ require("ime-auto").setup({
 })
 ```
 
+### macOS: 外部CLIツールの使用（高速化）
+
+デフォルトの`osascript`は起動に時間がかかるため、より高速な外部CLIツールを使用できます：
+
+#### macimeの使用（推奨：10-60%高速化）
+
+```lua
+require("ime-auto").setup({
+  macos_ime_tool = "macime",
+})
+```
+
+**初回セットアップ**: プラグイン読み込み後、以下のコマンドを実行：
+```vim
+:ImeAutoSetupInputSources
+```
+英語入力ソースを選択するだけでOK（日本語IMEは自動的に保存・復元されます）
+
+**特徴：**
+- Google日本語入力、ATOK、Kotoeriなど、どの日本語IMEでも自動対応
+- 日本語IME IDの設定が不要で、最もシンプル
+
+インストール: [riodelphino/macime](https://github.com/riodelphino/macime)
+
+#### macismの使用（CJKV入力に最適）
+
+macismは、CJKV入力ソースの切り替えが最も確実なツールです：
+
+```lua
+require("ime-auto").setup({
+  macos_ime_tool = "macism",
+})
+```
+
+**初回セットアップ**: プラグイン読み込み後、以下のコマンドを実行：
+```vim
+:ImeAutoSetupInputSources
+```
+対話的に英語と日本語の入力ソースを選択すると、設定が自動保存されます。次回起動時から自動的に読み込まれます。
+
+インストール: [laishulu/macism](https://github.com/laishulu/macism)
+
+#### im-selectの使用
+
+```lua
+require("ime-auto").setup({
+  macos_ime_tool = "im-select",
+})
+```
+
+**初回セットアップ**: プラグイン読み込み後、以下のコマンドを実行：
+```vim
+:ImeAutoSetupInputSources
+```
+対話的に英語と日本語の入力ソースを選択すると、設定が自動保存されます。次回起動時から自動的に読み込まれます。
+
+インストール: [daipeihust/im-select](https://github.com/daipeihust/im-select)
+
+#### 入力ソースIDの確認方法（上級者向け）
+
+通常は`:ImeAutoSetupInputSources`コマンドで自動設定されますが、手動で設定ファイルに記載したい場合は以下の方法で確認できます。
+
+##### 方法1: プラグインのコマンドで確認
+
+```vim
+:ImeAutoListInputSources
+```
+
+##### 方法2: ターミナルで確認
+
+```bash
+# macimeがインストールされている場合
+macime list
+
+# macismがインストールされている場合
+macism
+
+# im-selectがインストールされている場合
+im-select
+```
+
+##### 手動設定例（上級者向け）
+
+`:ImeAutoSetupInputSources`を使わずに手動で設定する場合：
+
+```lua
+require("ime-auto").setup({
+  macos_ime_tool = "macism",  -- または "im-select"
+  macos_input_source_en = "com.apple.keylayout.ABC",
+  macos_input_source_ja = "com.google.inputmethod.Japanese.base",  -- 使用するIMEに合わせて変更
+})
+```
+
+**注意**: 手動設定は`:ImeAutoSetupInputSources`の自動保存設定より優先されます。
+
 ## コマンド
+
+### 基本コマンド
 
 - `:ImeAutoEnable` - IME自動切り替えを有効化
 - `:ImeAutoDisable` - IME自動切り替えを無効化
 - `:ImeAutoToggle` - IME自動切り替えのトグル
 - `:ImeAutoStatus` - 現在の状態を表示
 
+### 入力ソース設定コマンド（macOS専用）
+
+- `:ImeAutoSetupInputSources` - 入力ソースをセットアップ（初回のみ必要、設定は自動保存されます）
+- `:ImeAutoListInputSources` - 利用可能な入力ソース一覧を表示（上級者向け）
+
 ## 動作原理
 
 1. **エスケープシーケンス**: insertモードで設定された全角文字列（例：`ｋｊ`）を入力するとnormalモードに移行
 2. **IME制御**: 各OS標準の方法でIMEを制御
-   - macOS: `osascript`を使用
+   - macOS: `osascript`を使用（デフォルト）、または高速な外部CLIツール（macime、macism、im-select）
    - Windows: PowerShellを使用
    - Linux: `fcitx-remote`または`ibus`を使用（インストール済みの場合）
+3. **パフォーマンス最適化**: IME切り替え時の遅延を最小化するため、不要な処理をスキップ
 
 ## トラブルシューティング
 
@@ -114,6 +219,18 @@ require("ime-auto").setup({
   ```lua
   require("ime-auto").setup({ escape_timeout = 500 })
   ```
+
+### IME切り替えにラグがある（macOS）
+
+より高速な外部CLIツールを使用することで改善できます：
+
+```lua
+require("ime-auto").setup({
+  macos_ime_tool = "macime",  -- 推奨：10-60%高速化
+})
+```
+
+詳細は「macOS: 外部CLIツールの使用（高速化）」セクションを参照してください。
 
 ## ライセンス
 
