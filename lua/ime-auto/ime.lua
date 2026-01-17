@@ -158,6 +158,15 @@ function M.save_state()
 end
 
 function M.restore_state()
+  local config = require("ime-auto.config").get()
+
+  -- For macime, use load command to restore the saved state
+  if config.os == "macos" and config.macos_ime_tool == "macime" then
+    vim.fn.system("macime load")
+    return
+  end
+
+  -- For other tools, use the standard restore logic
   if last_ime_state then
     M.on()
   else
