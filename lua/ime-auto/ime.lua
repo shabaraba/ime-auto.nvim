@@ -176,9 +176,16 @@ function M.parse_input_sources()
   if not source_list then return {} end
 
   local sources = {}
-  for _, id in ipairs(source_list) do
-    local name = id:match("%.([^.]+)$") or id
-    table.insert(sources, { id = id, name = name })
+  for _, entry in ipairs(source_list) do
+    -- Parse "id - name" format from swift_tool.list()
+    local id, name = entry:match("^(.-)%s*%-%s*(.+)$")
+    if id and name then
+      table.insert(sources, { id = id, name = name })
+    else
+      -- Fallback: treat entire entry as ID and extract name from ID
+      local fallback_name = entry:match("%.([^.]+)$") or entry
+      table.insert(sources, { id = entry, name = fallback_name })
+    end
   end
   return sources
 end
