@@ -3,12 +3,20 @@ local M = {}
 local swift_bin_path = nil
 
 local function run_swift_command(args)
-  local ok = M.ensure_compiled()
+  local ok, err = M.ensure_compiled()
   if not ok then
+    if err then
+      vim.notify("[ime-auto] " .. err, vim.log.levels.ERROR)
+    end
     return nil, false
   end
 
-  local cmd = args and string.format('"%s" %s', swift_bin_path, args) or swift_bin_path
+  local cmd
+  if args then
+    cmd = string.format('%s %s', vim.fn.shellescape(swift_bin_path), vim.fn.shellescape(args))
+  else
+    cmd = vim.fn.shellescape(swift_bin_path)
+  end
   local result = vim.fn.system(cmd)
   local success = vim.v.shell_error == 0
   return result, success
@@ -75,10 +83,19 @@ function M.ensure_compiled()
   -- Write Swift source code
   local file = io.open(source_path, 'w')
   if not file then
-    return false, "Failed to write Swift source file"
+    return false, "Failed to open Swift source file for writing: " .. source_path
   end
-  file:write(swift_source)
-  file:close()
+
+  local write_ok, write_err = file:write(swift_source)
+  if not write_ok then
+    file:close()
+    return false, "Failed to write Swift source to " .. source_path .. ": " .. tostring(write_err)
+  end
+
+  local close_ok, close_err = file:close()
+  if not close_ok then
+    return false, "Failed to close Swift source file " .. source_path .. ": " .. tostring(close_err)
+  end
 
   -- Compile Swift code
   local compile_cmd = string.format('swiftc "%s" -o "%s" 2>&1', source_path, swift_bin_path)
@@ -100,7 +117,7 @@ function M.get_current()
 end
 
 function M.switch_to(source_id)
-  local _, success = run_swift_command(string.format('"%s"', source_id))
+  local _, success = run_swift_command(source_id)
   return success
 end
 

@@ -17,9 +17,10 @@ end
 function M.create_centered_float(lines, width, height)
   local buf = vim.api.nvim_create_buf(false, true)
 
+  -- Guard against nil UI and use fallback values
   local ui = vim.api.nvim_list_uis()[1]
-  local win_width = ui.width
-  local win_height = ui.height
+  local win_width = ui and ui.width or vim.o.columns
+  local win_height = ui and ui.height or vim.o.lines
 
   local row = math.floor((win_height - height) / 2)
   local col = math.floor((win_width - width) / 2)
@@ -47,6 +48,14 @@ end
 
 function M.select_from_list(title, items, callback)
   M.close_float()
+
+  -- Guard against empty items
+  if #items == 0 then
+    if callback then
+      callback(nil)
+    end
+    return
+  end
 
   local max_item_length = 0
   for i, item in ipairs(items) do
@@ -141,9 +150,8 @@ function M.select_from_list(title, items, callback)
           key = char
         end
 
-        if not on_key(key) then
-          break
-        end
+        -- Call on_key and continue loop even if it returns false (unrecognized keys are ignored)
+        on_key(key)
 
         if not current_float or not vim.api.nvim_win_is_valid(current_float) then
           break

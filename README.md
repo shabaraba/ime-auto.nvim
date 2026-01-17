@@ -100,11 +100,25 @@ require("ime-auto").setup({
 
 ime-auto.nvimは、macOSでIME切り替えを行うための専用Swiftツールを内蔵しています：
 
-- **外部ツール不要**: macOS標準のSwiftコンパイラを使用（追加インストール不要）
+- **システムSwiftコンパイラを使用**: macOSの`swiftc`コマンドが必要（通常、Xcode Command Line Toolsに含まれます）
 - **初回起動時に自動コンパイル**: `~/.local/share/nvim/ime-auto/swift-ime`に生成
 - **高速で信頼性が高い**: macOSのCarbon APIを直接使用
 - **自動状態管理**: InsertモードとNormalモードのIME状態を2つのスロット（slot A/B）に保存し、モード切り替え時に自動トグル
 - **設定不要**: 使い始めた瞬間から、あなたのIME使用パターンを学習して記憶
+
+### swiftcが見つからない場合
+
+`swiftc`コマンドがシステムにない場合、以下のコマンドでXcode Command Line Toolsをインストールしてください：
+
+```bash
+xcode-select --install
+```
+
+インストール後、以下のコマンドで確認できます：
+
+```bash
+swiftc --version
+```
 
 ## トラブルシューティング
 

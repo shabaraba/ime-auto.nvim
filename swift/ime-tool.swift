@@ -57,7 +57,12 @@ if command == "list" {
     // Save current to slot A
     if let id = currentID {
         let slotA = getSaveFilePath(slot: "a")
-        try? id.write(to: slotA, atomically: true, encoding: .utf8)
+        do {
+            try id.write(to: slotA, atomically: true, encoding: .utf8)
+        } catch {
+            fputs("Error: Failed to write slot A: \(error.localizedDescription)\n", stderr)
+            exit(1)
+        }
     }
 
     // Switch to slot B (if exists), otherwise switch to default English (ABC)
@@ -98,7 +103,12 @@ if command == "list" {
     // Save current to slot B
     if let id = currentID {
         let slotB = getSaveFilePath(slot: "b")
-        try? id.write(to: slotB, atomically: true, encoding: .utf8)
+        do {
+            try id.write(to: slotB, atomically: true, encoding: .utf8)
+        } catch {
+            fputs("Error: Failed to write slot B: \(error.localizedDescription)\n", stderr)
+            exit(1)
+        }
     }
 
     // Switch to slot A (if exists), otherwise keep current
@@ -163,7 +173,12 @@ if command == "list" {
     } else if let current = currentID {
         // Current is neither A nor B
         // Save current to slot B, switch to slot A (if exists)
-        try? current.write(to: slotB, atomically: true, encoding: .utf8)
+        do {
+            try current.write(to: slotB, atomically: true, encoding: .utf8)
+        } catch {
+            fputs("Error: Failed to write slot B: \(error.localizedDescription)\n", stderr)
+            exit(1)
+        }
         if let a = slotAID {
             targetID = a
         } else {
@@ -196,7 +211,12 @@ if command == "list" {
     if let sourceID = TISGetInputSourceProperty(current, kTISPropertyInputSourceID) {
         let id = Unmanaged<CFString>.fromOpaque(sourceID).takeUnretainedValue() as String
         let saveFile = getSaveFilePath(slot: "a")
-        try? id.write(to: saveFile, atomically: true, encoding: .utf8)
+        do {
+            try id.write(to: saveFile, atomically: true, encoding: .utf8)
+        } catch {
+            fputs("Error: Failed to write slot A: \(error.localizedDescription)\n", stderr)
+            exit(1)
+        }
     }
 } else if command == "save-normal" {
     // Save current input source to slot B (normal mode IME)
@@ -204,7 +224,12 @@ if command == "list" {
     if let sourceID = TISGetInputSourceProperty(current, kTISPropertyInputSourceID) {
         let id = Unmanaged<CFString>.fromOpaque(sourceID).takeUnretainedValue() as String
         let saveFile = getSaveFilePath(slot: "b")
-        try? id.write(to: saveFile, atomically: true, encoding: .utf8)
+        do {
+            try id.write(to: saveFile, atomically: true, encoding: .utf8)
+        } catch {
+            fputs("Error: Failed to write slot B: \(error.localizedDescription)\n", stderr)
+            exit(1)
+        }
     }
 } else {
     // Legacy: Switch to specified input source
