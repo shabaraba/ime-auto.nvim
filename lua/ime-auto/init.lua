@@ -106,42 +106,10 @@ local function create_commands()
     end
   end, { desc = "List available input sources (macOS only)" })
 
-  M.utils.create_user_command("SelectEnglishInput", function()
-    local sources, err = M.ime.parse_input_sources()
-    if err then
-      vim.notify("[ime-auto] " .. err, vim.log.levels.WARN)
-      return
-    end
-
-    if not sources or #sources == 0 then
-      vim.notify("[ime-auto] No input sources found", vim.log.levels.ERROR)
-      return
-    end
-
-    -- Create display items
-    local items = {}
-    for _, source in ipairs(sources) do
-      table.insert(items, source.name)
-    end
-
-    vim.ui.select(items, {
-      prompt = "Select English input source:",
-    }, function(choice, idx)
-      if choice and idx then
-        local selected = sources[idx]
-        M.config.set_input_source_en(selected.id)
-        vim.notify(string.format("[ime-auto] English input set to: %s", selected.id), vim.log.levels.INFO)
-      end
-    end)
-  end, { desc = "Select English input source interactively (macOS only)" })
-
-  M.utils.create_user_command("SelectJapaneseInput", function()
+  M.utils.create_user_command("SetupInputSources", function()
     local config_opts = M.config.get()
-    if config_opts.macos_ime_tool == "macime" then
-      vim.notify("[ime-auto] macime doesn't require Japanese input source configuration.\nIt automatically saves and restores your Japanese IME.", vim.log.levels.INFO)
-      return
-    end
 
+    -- Step 1: Select English input source
     local sources, err = M.ime.parse_input_sources()
     if err then
       vim.notify("[ime-auto] " .. err, vim.log.levels.WARN)
@@ -159,16 +127,54 @@ local function create_commands()
       table.insert(items, source.name)
     end
 
+    -- First selection: English input
     vim.ui.select(items, {
-      prompt = "Select Japanese input source:",
-    }, function(choice, idx)
-      if choice and idx then
-        local selected = sources[idx]
-        M.config.set_input_source_ja(selected.id)
-        vim.notify(string.format("[ime-auto] Japanese input set to: %s", selected.id), vim.log.levels.INFO)
+      prompt = "Step 1/2: Select English input source:",
+    }, function(en_choice, en_idx)
+      if not en_choice or not en_idx then
+        vim.notify("[ime-auto] Setup cancelled", vim.log.levels.WARN)
+        return
       end
+
+      local en_selected = sources[en_idx]
+      M.config.set_input_source_en(en_selected.id)
+      vim.notify(string.format("[ime-auto] English input: %s", en_selected.id), vim.log.levels.INFO)
+
+      -- Step 2: Select Japanese input source (only for macism/im-select)
+      if config_opts.macos_ime_tool == "macime" then
+        -- macime doesn't need Japanese input configuration
+        local ok, path = M.config.save_input_sources()
+        if ok then
+          vim.notify(string.format("[ime-auto] Setup complete! Configuration saved to:\n%s\n\nmacime will automatically save and restore your Japanese IME.", path), vim.log.levels.INFO)
+        else
+          vim.notify("[ime-auto] Failed to save configuration: " .. path, vim.log.levels.ERROR)
+        end
+        return
+      end
+
+      -- For macism/im-select, ask for Japanese input
+      vim.ui.select(items, {
+        prompt = "Step 2/2: Select Japanese input source:",
+      }, function(ja_choice, ja_idx)
+        if not ja_choice or not ja_idx then
+          vim.notify("[ime-auto] Setup cancelled (Japanese input not selected)", vim.log.levels.WARN)
+          return
+        end
+
+        local ja_selected = sources[ja_idx]
+        M.config.set_input_source_ja(ja_selected.id)
+        vim.notify(string.format("[ime-auto] Japanese input: %s", ja_selected.id), vim.log.levels.INFO)
+
+        -- Save configuration
+        local ok, path = M.config.save_input_sources()
+        if ok then
+          vim.notify(string.format("[ime-auto] Setup complete! Configuration saved to:\n%s", path), vim.log.levels.INFO)
+        else
+          vim.notify("[ime-auto] Failed to save configuration: " .. path, vim.log.levels.ERROR)
+        end
+      end)
     end)
-  end, { desc = "Select Japanese input source interactively (macOS only)" })
+  end, { desc = "Setup input sources interactively (macOS only)" })
 end
 
 function M.setup(opts)

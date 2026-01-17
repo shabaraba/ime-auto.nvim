@@ -78,10 +78,14 @@ require("ime-auto").setup({
 ```lua
 require("ime-auto").setup({
   macos_ime_tool = "macime",
-  -- 日本語IME IDの指定は不要！
-  -- macimeが自動的に現在の日本語IMEを保存・復元します
 })
 ```
+
+**初回セットアップ**: プラグイン読み込み後、以下のコマンドを実行：
+```vim
+:ImeAutoSetupInputSources
+```
+英語入力ソースを選択するだけでOK（日本語IMEは自動的に保存・復元されます）
 
 **特徴：**
 - Google日本語入力、ATOK、Kotoeriなど、どの日本語IMEでも自動対応
@@ -99,11 +103,11 @@ require("ime-auto").setup({
 })
 ```
 
-**初回セットアップ**: プラグイン読み込み後、以下のコマンドで入力ソースを設定してください：
+**初回セットアップ**: プラグイン読み込み後、以下のコマンドを実行：
 ```vim
-:ImeAutoSelectEnglishInput    " 英語入力ソースを選択
-:ImeAutoSelectJapaneseInput   " 日本語入力ソースを選択
+:ImeAutoSetupInputSources
 ```
+対話的に英語と日本語の入力ソースを選択すると、設定が自動保存されます。次回起動時から自動的に読み込まれます。
 
 インストール: [laishulu/macism](https://github.com/laishulu/macism)
 
@@ -115,41 +119,25 @@ require("ime-auto").setup({
 })
 ```
 
-**初回セットアップ**: プラグイン読み込み後、以下のコマンドで入力ソースを設定してください：
+**初回セットアップ**: プラグイン読み込み後、以下のコマンドを実行：
 ```vim
-:ImeAutoSelectEnglishInput    " 英語入力ソースを選択
-:ImeAutoSelectJapaneseInput   " 日本語入力ソースを選択
+:ImeAutoSetupInputSources
 ```
+対話的に英語と日本語の入力ソースを選択すると、設定が自動保存されます。次回起動時から自動的に読み込まれます。
 
 インストール: [daipeihust/im-select](https://github.com/daipeihust/im-select)
 
-#### 入力ソースIDの確認・設定方法
+#### 入力ソースIDの確認方法（上級者向け）
 
-**macism/im-selectを使用する場合**は、日本語IME IDを明示的に設定する必要があります。
+通常は`:ImeAutoSetupInputSources`コマンドで自動設定されますが、手動で設定ファイルに記載したい場合は以下の方法で確認できます。
 
-##### 方法1: 対話的に選択（最も簡単！）
-
-Neovim内で以下のコマンドを実行：
-
-```vim
-:ImeAutoSelectEnglishInput    " 英語入力ソースを選択
-:ImeAutoSelectJapaneseInput   " 日本語入力ソースを選択
-```
-
-利用可能な入力ソース一覧が表示され、選択するとその場で設定されます。
-**注意**: この設定はNeovimセッション中のみ有効です。永続化するには、選択後に表示されるIDを設定ファイルに記載してください。
-
-##### 方法2: 入力ソース一覧を表示
-
-Neovim内で以下のコマンドを実行：
+##### 方法1: プラグインのコマンドで確認
 
 ```vim
 :ImeAutoListInputSources
 ```
 
-利用可能な入力ソース一覧が表示されます。IDをコピーして設定ファイルに貼り付けてください。
-
-##### 方法3: ターミナルで確認
+##### 方法2: ターミナルで確認
 
 ```bash
 # macimeがインストールされている場合
@@ -162,17 +150,19 @@ macism
 im-select
 ```
 
-##### 設定例（macism/im-select）
+##### 手動設定例（上級者向け）
+
+`:ImeAutoSetupInputSources`を使わずに手動で設定する場合：
 
 ```lua
 require("ime-auto").setup({
   macos_ime_tool = "macism",  -- または "im-select"
-  macos_input_source_en = "com.apple.keylayout.ABC",  -- 英語
-  macos_input_source_ja = "com.google.inputmethod.Japanese.base",  -- Google日本語入力の例
-  -- または "com.apple.inputmethod.Kotoeri.Hiragana" (Kotoeri)
-  -- または "jp.monokakido.inputmethod.ATOK.Roman" (ATOK)
+  macos_input_source_en = "com.apple.keylayout.ABC",
+  macos_input_source_ja = "com.google.inputmethod.Japanese.base",  -- 使用するIMEに合わせて変更
 })
 ```
+
+**注意**: 手動設定は`:ImeAutoSetupInputSources`の自動保存設定より優先されます。
 
 ## コマンド
 
@@ -185,9 +175,8 @@ require("ime-auto").setup({
 
 ### 入力ソース設定コマンド（macOS専用）
 
-- `:ImeAutoSelectEnglishInput` - 英語入力ソースを対話的に選択
-- `:ImeAutoSelectJapaneseInput` - 日本語入力ソースを対話的に選択（macism/im-select使用時）
-- `:ImeAutoListInputSources` - 利用可能な入力ソース一覧を表示
+- `:ImeAutoSetupInputSources` - 入力ソースをセットアップ（初回のみ必要、設定は自動保存されます）
+- `:ImeAutoListInputSources` - 利用可能な入力ソース一覧を表示（上級者向け）
 
 ## 動作原理
 
