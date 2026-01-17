@@ -165,4 +165,27 @@ function M.restore_state()
   end
 end
 
+function M.list_input_sources()
+  local config = require("ime-auto.config").get()
+
+  if config.os ~= "macos" then
+    return nil, "This feature is only available on macOS"
+  end
+
+  local tool = config.macos_ime_tool
+  local result
+
+  if tool == "macime" then
+    result = execute_command("macime list")
+  elseif tool == "macism" or tool == "im-select" then
+    -- For macism/im-select, use defaults to read available input sources
+    result = execute_command("defaults read ~/Library/Preferences/com.apple.HIToolbox.plist AppleEnabledInputSources")
+  else
+    -- Default: use defaults
+    result = execute_command("defaults read ~/Library/Preferences/com.apple.HIToolbox.plist AppleEnabledInputSources")
+  end
+
+  return result
+end
+
 return M
