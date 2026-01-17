@@ -1,40 +1,34 @@
 local M = {}
 
-local last_ime_state = nil  -- nil means not initialized yet
+local last_ime_state = nil
+
+local function trim(str)
+  if not str then return nil end
+  return str:gsub("^%s+", ""):gsub("%s+$", "")
+end
 
 local function execute_command(cmd)
-  if not cmd then
-    return nil
-  end
+  if not cmd then return nil end
 
   local handle = io.popen(cmd)
-  if not handle then
-    return nil
-  end
+  if not handle then return nil end
 
   local result = handle:read("*a")
   handle:close()
-
-  return result and result:gsub("^%s+", ""):gsub("%s+$", "")
+  return trim(result)
 end
 
 local function ime_control_macos(action)
   local swift_tool = require("ime-auto.swift-ime-tool")
 
   if action == "off" then
-    -- InsertLeave: Save current Insert mode IME to slot A, switch to Normal mode IME (slot B)
     swift_tool.toggle_from_insert()
   elseif action == "on" then
-    -- InsertEnter: Save current Normal mode IME to slot B, switch to Insert mode IME (slot A)
     swift_tool.toggle_from_normal()
   elseif action == "status" then
     local result = swift_tool.get_current()
-    if not result then
-      return false
-    end
-
-    -- Pattern matching for Japanese input sources
-    return result:match("Japanese") ~= nil or result:match("Hiragana") ~= nil or result:match("Katakana") ~= nil
+    if not result then return false end
+    return result:match("Japanese") or result:match("Hiragana") or result:match("Katakana")
   end
 end
 
@@ -105,22 +99,10 @@ function M.control(action)
 end
 
 function M.off()
-  local config = require("ime-auto.config").get()
-
-  if config.debug then
-    local current_status = M.get_status()
-    vim.notify(string.format("[ime-auto] M.off() called, current status: %s", tostring(current_status)), vim.log.levels.DEBUG)
-  end
-
-  -- Always call control("off") to save current Insert mode IME to slot A
   M.control("off")
 end
 
 function M.on()
-  local config = require("ime-auto.config").get()
-  if config.debug then
-    vim.notify("[ime-auto] M.on() called", vim.log.levels.DEBUG)
-  end
   M.control("on")
 end
 
@@ -134,33 +116,19 @@ function M.get_status()
 end
 
 function M.save_state()
-  local current = M.get_status()
-  last_ime_state = current
-  local config = require("ime-auto.config").get()
-  if config.debug then
-    vim.notify(string.format("[ime-auto] Saved IME state: %s", tostring(last_ime_state)), vim.log.levels.DEBUG)
-  end
+  last_ime_state = M.get_status()
 end
 
 function M.restore_state()
   local config = require("ime-auto.config").get()
 
-  if config.debug then
-    vim.notify("[ime-auto] Restoring IME state", vim.log.levels.DEBUG)
-  end
-
-  -- For macOS, use Swift tool's load command to restore the saved state
   if config.os == "macos" then
-    M.on()  -- This will call swift_tool.load_saved()
+    M.on()
     return
   end
 
-  -- For other OS (Windows/Linux), use the standard restore logic
   if last_ime_state == nil then
     last_ime_state = M.get_status()
-    if config.debug then
-      vim.notify(string.format("[ime-auto] First time: initialized state from current IME: %s", tostring(last_ime_state)), vim.log.levels.DEBUG)
-    end
   end
 
   if last_ime_state then
@@ -170,40 +138,36 @@ function M.restore_state()
   end
 end
 
-function M.list_input_sources()
+local function require_macos()
   local config = require("ime-auto.config").get()
-
   if config.os ~= "macos" then
     return nil, "This feature is only available on macOS"
   end
+  return true
+end
+
+function M.list_input_sources()
+  local ok, err = require_macos()
+  if not ok then return nil, err end
 
   local swift_tool = require("ime-auto.swift-ime-tool")
   local sources = swift_tool.list()
-  if sources then
-    return table.concat(sources, "\n")
-  end
-  return nil
+  return sources and table.concat(sources, "\n") or nil
 end
 
--- Parse input source list and return array of {id, name} tables
 function M.parse_input_sources()
-  local config = require("ime-auto.config").get()
-
-  if config.os ~= "macos" then
-    return nil, "This feature is only available on macOS"
-  end
+  local ok, err = require_macos()
+  if not ok then return nil, err end
 
   local swift_tool = require("ime-auto.swift-ime-tool")
   local source_list = swift_tool.list()
+  if not source_list then return {} end
+
   local sources = {}
-
-  if source_list then
-    for _, id in ipairs(source_list) do
-      local name = id:match("%.([^.]+)$") or id
-      table.insert(sources, { id = id, name = name })
-    end
+  for _, id in ipairs(source_list) do
+    local name = id:match("%.([^.]+)$") or id
+    table.insert(sources, { id = id, name = name })
   end
-
   return sources
 end
 

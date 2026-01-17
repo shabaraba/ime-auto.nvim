@@ -10,7 +10,7 @@ local enabled = false
 
 local function create_autocmds()
   local group = vim.api.nvim_create_augroup("ime_auto", { clear = true })
-  
+
   vim.api.nvim_create_autocmd("InsertEnter", {
     group = group,
     callback = function()
@@ -36,21 +36,20 @@ local function create_commands()
   M.utils.create_user_command("Enable", function()
     M.enable()
   end, { desc = "Enable IME auto switching" })
-  
+
   M.utils.create_user_command("Disable", function()
     M.disable()
   end, { desc = "Disable IME auto switching" })
-  
+
   M.utils.create_user_command("Toggle", function()
     M.toggle()
   end, { desc = "Toggle IME auto switching" })
-  
+
   M.utils.create_user_command("Status", function()
     local status = enabled and "enabled" or "disabled"
     local ime_status = M.ime.get_status() and "on" or "off"
     vim.notify(string.format("ime-auto: %s, IME: %s", status, ime_status))
   end, { desc = "Show IME auto status" })
-
 
   M.utils.create_user_command("ListInputSources", function()
     local result, err = M.ime.list_input_sources()
@@ -59,50 +58,40 @@ local function create_commands()
       return
     end
 
-    if result then
-      -- Display in a new buffer
-      local buf = vim.api.nvim_create_buf(false, true)
-      local lines = vim.split(result, "\n")
-
-      -- Add header
-      local header = {
-        "=== Available Input Sources ===",
-        "",
-        "This is for reference only. ime-auto automatically manages IME switching.",
-        "",
-        "---",
-        "",
-      }
-
-      for i = #header, 1, -1 do
-        table.insert(lines, 1, header[i])
-      end
-
-      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-      vim.api.nvim_buf_set_option(buf, 'modifiable', false)
-      vim.api.nvim_buf_set_option(buf, 'buftype', 'nofile')
-      vim.api.nvim_buf_set_option(buf, 'bufhidden', 'wipe')
-
-      -- Open in a split
-      vim.cmd('split')
-      vim.api.nvim_win_set_buf(0, buf)
-    else
+    if not result then
       vim.notify("[ime-auto] Failed to list input sources", vim.log.levels.ERROR)
+      return
     end
+
+    local header = {
+      "=== Available Input Sources ===",
+      "",
+      "This is for reference only. ime-auto automatically manages IME switching.",
+      "",
+      "---",
+      "",
+    }
+
+    local lines = vim.list_extend(header, vim.split(result, "\n"))
+    local buf = vim.api.nvim_create_buf(false, true)
+
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.api.nvim_buf_set_option(buf, 'modifiable', false)
+    vim.api.nvim_buf_set_option(buf, 'buftype', 'nofile')
+    vim.api.nvim_buf_set_option(buf, 'bufhidden', 'wipe')
+
+    vim.cmd('split')
+    vim.api.nvim_win_set_buf(0, buf)
   end, { desc = "List available input sources (macOS only)" })
 
 end
 
 function M.setup(opts)
   M.config.setup(opts)
-  
   create_autocmds()
   create_commands()
-  
   M.escape.setup()
-  
   M.enable()
-  
   M.utils.notify("Setup complete", vim.log.levels.DEBUG)
 end
 

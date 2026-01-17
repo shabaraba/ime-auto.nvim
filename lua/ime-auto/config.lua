@@ -45,5 +45,4 @@ function M.get()
   return M.options
 end
 
-
 return M

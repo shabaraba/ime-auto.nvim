@@ -2,6 +2,23 @@ local M = {}
 
 local swift_bin_path = nil
 
+local function run_swift_command(args)
+  local ok = M.ensure_compiled()
+  if not ok then
+    return nil, false
+  end
+
+  local cmd = args and string.format('"%s" %s', swift_bin_path, args) or swift_bin_path
+  local result = vim.fn.system(cmd)
+  local success = vim.v.shell_error == 0
+  return result, success
+end
+
+local function trim(str)
+  if not str then return nil end
+  return str:gsub("^%s+", ""):gsub("%s+$", "")
+end
+
 -- Swift source code for IME control
 local swift_source = [[
 import Carbon
@@ -250,104 +267,57 @@ function M.ensure_compiled()
   return true
 end
 
--- Get current input source
 function M.get_current()
-  local ok = M.ensure_compiled()
-  if not ok then
-    return nil
-  end
-
-  local result = vim.fn.system(swift_bin_path)
-  if vim.v.shell_error == 0 and result then
-    return result:gsub("^%s+", ""):gsub("%s+$", "")
+  local result, success = run_swift_command(nil)
+  if success and result then
+    return trim(result)
   end
   return nil
 end
 
--- Switch to specified input source
 function M.switch_to(source_id)
-  local ok = M.ensure_compiled()
-  if not ok then
-    return false
-  end
-
-  vim.fn.system(string.format('"%s" "%s"', swift_bin_path, source_id))
-  return vim.v.shell_error == 0
+  local _, success = run_swift_command(string.format('"%s"', source_id))
+  return success
 end
 
--- List all available input sources
 function M.list()
-  local ok = M.ensure_compiled()
-  if not ok then
+  local result, success = run_swift_command("list")
+  if not success or not result then
     return nil
   end
 
-  local result = vim.fn.system(string.format('"%s" list', swift_bin_path))
-  if vim.v.shell_error == 0 and result then
-    local sources = {}
-    for line in result:gmatch("[^\r\n]+") do
-      if line and line ~= "" then
-        table.insert(sources, line)
-      end
+  local sources = {}
+  for line in result:gmatch("[^\r\n]+") do
+    if line ~= "" then
+      table.insert(sources, line)
     end
-    return sources
   end
-  return nil
+  return sources
 end
 
--- Toggle between insert mode and normal mode IME
 function M.toggle()
-  local ok = M.ensure_compiled()
-  if not ok then
-    return false
-  end
-
-  vim.fn.system(string.format('"%s" toggle', swift_bin_path))
-  return vim.v.shell_error == 0
+  local _, success = run_swift_command("toggle")
+  return success
 end
 
--- Save current IME as insert mode IME (slot A)
 function M.save_insert_ime()
-  local ok = M.ensure_compiled()
-  if not ok then
-    return false
-  end
-
-  vim.fn.system(string.format('"%s" save-insert', swift_bin_path))
-  return vim.v.shell_error == 0
+  local _, success = run_swift_command("save-insert")
+  return success
 end
 
--- Save current IME as normal mode IME (slot B)
 function M.save_normal_ime()
-  local ok = M.ensure_compiled()
-  if not ok then
-    return false
-  end
-
-  vim.fn.system(string.format('"%s" save-normal', swift_bin_path))
-  return vim.v.shell_error == 0
+  local _, success = run_swift_command("save-normal")
+  return success
 end
 
--- Toggle from Insert mode: save current to slot A, switch to slot B
 function M.toggle_from_insert()
-  local ok = M.ensure_compiled()
-  if not ok then
-    return false
-  end
-
-  vim.fn.system(string.format('"%s" toggle-from-insert', swift_bin_path))
-  return vim.v.shell_error == 0
+  local _, success = run_swift_command("toggle-from-insert")
+  return success
 end
 
--- Toggle from Normal mode: save current to slot B, switch to slot A
 function M.toggle_from_normal()
-  local ok = M.ensure_compiled()
-  if not ok then
-    return false
-  end
-
-  vim.fn.system(string.format('"%s" toggle-from-normal', swift_bin_path))
-  return vim.v.shell_error == 0
+  local _, success = run_swift_command("toggle-from-normal")
+  return success
 end
 
 return M

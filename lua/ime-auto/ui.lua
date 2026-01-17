@@ -94,18 +94,26 @@ function M.select_from_list(title, items, callback)
     vim.api.nvim_buf_add_highlight(buf, ns_id, 'Visual', highlight_line, 0, -1)
   end
 
+  local function move_down()
+    current_idx = math.min(current_idx + 1, #items)
+    update_display()
+  end
+
+  local function move_up()
+    current_idx = math.max(current_idx - 1, 1)
+    update_display()
+  end
+
   local function on_key(key)
     if key == "\27" then
       M.close_float()
       callback(nil)
       return true
     elseif key == "j" or key == "\14" then
-      current_idx = math.min(current_idx + 1, #items)
-      update_display()
+      move_down()
       return true
     elseif key == "k" or key == "\16" then
-      current_idx = math.max(current_idx - 1, 1)
-      update_display()
+      move_up()
       return true
     elseif key == "\r" then
       M.close_float()
@@ -143,7 +151,7 @@ function M.select_from_list(title, items, callback)
       end
     end
 
-    local ok, err = pcall(get_input)
+    local ok = pcall(get_input)
     if not ok then
       M.close_float()
     end
