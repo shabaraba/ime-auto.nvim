@@ -1,7 +1,6 @@
 local M = {}
 
-local last_ime_state = false
-local tool_check_done = {}
+local last_ime_state = nil  -- nil means not initialized yet
 
 local function execute_command(cmd)
   if not cmd then
@@ -19,135 +18,23 @@ local function execute_command(cmd)
   return result and result:gsub("^%s+", ""):gsub("%s+$", "")
 end
 
-local function check_tool_availability(tool)
-  if tool_check_done[tool] then
-    return true
-  end
-
-  local is_available = vim.fn.executable(tool) == 1
-
-  if not is_available then
-    local install_instructions = {
-      ["macime"] = "brew install macime (https://github.com/riodelphino/macime)",
-      ["macism"] = "brew install macism (https://github.com/laishulu/macism)",
-      ["im-select"] = "brew tap daipeihust/tap && brew install im-select"
-    }
-
-    local instruction = install_instructions[tool] or ("Install " .. tool)
-
-    vim.notify(
-      string.format(
-        "[ime-auto] Error: '%s' command not found\n\n" ..
-        "To use %s, please install it first:\n" ..
-        "  %s\n\n" ..
-        "Or change macos_ime_tool setting:\n" ..
-        '  macos_ime_tool = "macime"  -- Recommended\n' ..
-        '  macos_ime_tool = nil       -- Use default osascript',
-        tool, tool, instruction
-      ),
-      vim.log.levels.ERROR
-    )
-    return false
-  end
-
-  tool_check_done[tool] = true
-  return true
-end
-
 local function ime_control_macos(action)
-  local config = require("ime-auto.config").get()
-  local tool = config.macos_ime_tool
-  local en_source = config.macos_input_source_en
-  local ja_source = config.macos_input_source_ja
+  local swift_tool = require("ime-auto.swift-ime-tool")
 
-  -- External CLI tools: macime, macism, im-select
-  if tool == "macime" then
-    if not check_tool_availability("macime") then
-      return nil
+  if action == "off" then
+    -- InsertLeave: Save current Insert mode IME to slot A, switch to Normal mode IME (slot B)
+    swift_tool.toggle_from_insert()
+  elseif action == "on" then
+    -- InsertEnter: Save current Normal mode IME to slot B, switch to Insert mode IME (slot A)
+    swift_tool.toggle_from_normal()
+  elseif action == "status" then
+    local result = swift_tool.get_current()
+    if not result then
+      return false
     end
-    if action == "off" then
-      -- Switch to English and save current IME for later restore
-      return vim.fn.system("macime set " .. en_source .. " --save")
-    elseif action == "on" then
-      -- Restore previously saved IME
-      return vim.fn.system("macime load")
-    elseif action == "status" then
-      local result = execute_command("macime get")
-      if not result then
-        return false
-      end
-      return (result:match("Japanese") or result:match("Hiragana") or result:match("Katakana")) ~= nil
-    end
-  elseif tool == "macism" then
-    if not check_tool_availability("macism") then
-      return nil
-    end
-    if not ja_source then
-      vim.notify(
-        "[ime-auto] Error: macos_input_source_ja is not configured\n\n" ..
-        "macism requires Japanese input source ID. Please run:\n" ..
-        "  :ImeAutoSetup\n\n" ..
-        "Or manually configure in your init.lua:\n" ..
-        '  macos_input_source_ja = "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese"',
-        vim.log.levels.ERROR
-      )
-      return nil
-    end
-    if action == "off" then
-      return vim.fn.system("macism " .. en_source)
-    elseif action == "on" then
-      return vim.fn.system("macism " .. ja_source)
-    elseif action == "status" then
-      local result = execute_command("macism")
-      if not result then
-        return false
-      end
-      local is_japanese = result:match("Japanese") or result:match("Hiragana") or result:match("Katakana")
-      if ja_source and not is_japanese then
-        is_japanese = result:match(ja_source)
-      end
-      return is_japanese ~= nil
-    end
-  elseif tool == "im-select" then
-    if not check_tool_availability("im-select") then
-      return nil
-    end
-    if not ja_source then
-      vim.notify(
-        "[ime-auto] Error: macos_input_source_ja is not configured\n\n" ..
-        "im-select requires Japanese input source ID. Please run:\n" ..
-        "  :ImeAutoSetup\n\n" ..
-        "Or manually configure in your init.lua:\n" ..
-        '  macos_input_source_ja = "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese"',
-        vim.log.levels.ERROR
-      )
-      return nil
-    end
-    if action == "off" then
-      return vim.fn.system("im-select " .. en_source)
-    elseif action == "on" then
-      return vim.fn.system("im-select " .. ja_source)
-    elseif action == "status" then
-      local result = execute_command("im-select")
-      if not result then
-        return false
-      end
-      local is_japanese = result:match("Japanese") or result:match("Hiragana") or result:match("Katakana")
-      if ja_source and not is_japanese then
-        is_japanese = result:match(ja_source)
-      end
-      return is_japanese ~= nil
-    end
-  else
-    -- Default: osascript (built-in)
-    if action == "off" then
-      return vim.fn.system("osascript -e 'tell application \"System Events\" to key code 102'")
-    elseif action == "on" then
-      return vim.fn.system("osascript -e 'tell application \"System Events\" to key code 104'")
-    elseif action == "status" then
-      local result = execute_command("defaults read ~/Library/Preferences/com.apple.HIToolbox.plist AppleSelectedInputSources 2>/dev/null | grep -E 'Japanese|Hiragana|Katakana' | wc -l")
-      return result and tonumber(result) > 0
-    end
+
+    -- Pattern matching for Japanese input sources
+    return result:match("Japanese") ~= nil or result:match("Hiragana") ~= nil or result:match("Katakana") ~= nil
   end
 end
 
@@ -218,13 +105,22 @@ function M.control(action)
 end
 
 function M.off()
-  if not M.get_status() then
-    return
+  local config = require("ime-auto.config").get()
+
+  if config.debug then
+    local current_status = M.get_status()
+    vim.notify(string.format("[ime-auto] M.off() called, current status: %s", tostring(current_status)), vim.log.levels.DEBUG)
   end
+
+  -- Always call control("off") to save current Insert mode IME to slot A
   M.control("off")
 end
 
 function M.on()
+  local config = require("ime-auto.config").get()
+  if config.debug then
+    vim.notify("[ime-auto] M.on() called", vim.log.levels.DEBUG)
+  end
   M.control("on")
 end
 
@@ -238,19 +134,35 @@ function M.get_status()
 end
 
 function M.save_state()
-  last_ime_state = M.get_status()
+  local current = M.get_status()
+  last_ime_state = current
+  local config = require("ime-auto.config").get()
+  if config.debug then
+    vim.notify(string.format("[ime-auto] Saved IME state: %s", tostring(last_ime_state)), vim.log.levels.DEBUG)
+  end
 end
 
 function M.restore_state()
   local config = require("ime-auto.config").get()
 
-  -- For macime, use load command to restore the saved state
-  if config.os == "macos" and config.macos_ime_tool == "macime" then
-    vim.fn.system("macime load")
+  if config.debug then
+    vim.notify("[ime-auto] Restoring IME state", vim.log.levels.DEBUG)
+  end
+
+  -- For macOS, use Swift tool's load command to restore the saved state
+  if config.os == "macos" then
+    M.on()  -- This will call swift_tool.load_saved()
     return
   end
 
-  -- For other tools, use the standard restore logic
+  -- For other OS (Windows/Linux), use the standard restore logic
+  if last_ime_state == nil then
+    last_ime_state = M.get_status()
+    if config.debug then
+      vim.notify(string.format("[ime-auto] First time: initialized state from current IME: %s", tostring(last_ime_state)), vim.log.levels.DEBUG)
+    end
+  end
+
   if last_ime_state then
     M.on()
   else
@@ -265,20 +177,12 @@ function M.list_input_sources()
     return nil, "This feature is only available on macOS"
   end
 
-  local tool = config.macos_ime_tool
-  local result
-
-  if tool == "macime" then
-    result = execute_command("macime list")
-  elseif tool == "macism" or tool == "im-select" then
-    -- For macism/im-select, use defaults to read available input sources
-    result = execute_command("defaults read ~/Library/Preferences/com.apple.HIToolbox.plist AppleEnabledInputSources")
-  else
-    -- Default: use defaults
-    result = execute_command("defaults read ~/Library/Preferences/com.apple.HIToolbox.plist AppleEnabledInputSources")
+  local swift_tool = require("ime-auto.swift-ime-tool")
+  local sources = swift_tool.list()
+  if sources then
+    return table.concat(sources, "\n")
   end
-
-  return result
+  return nil
 end
 
 -- Parse input source list and return array of {id, name} tables
@@ -289,56 +193,14 @@ function M.parse_input_sources()
     return nil, "This feature is only available on macOS"
   end
 
-  local tool = config.macos_ime_tool
+  local swift_tool = require("ime-auto.swift-ime-tool")
+  local source_list = swift_tool.list()
   local sources = {}
 
-  if tool == "macime" then
-    local result = execute_command("macime list")
-    if result then
-      for line in result:gmatch("[^\r\n]+") do
-        if line and line ~= "" then
-          table.insert(sources, { id = line, name = line })
-        end
-      end
-    end
-  else
-    -- Use defaults and parse the plist output
-    local result = execute_command("defaults read ~/Library/Preferences/com.apple.HIToolbox.plist AppleEnabledInputSources")
-    if result then
-      -- Extract InputSourceID entries
-      for id in result:gmatch('"InputSourceID"%s*=%s*"([^"]+)"') do
-        -- Extract a friendly name from the ID if possible
-        local name = id:match("%.([^.]+)$") or id
-        table.insert(sources, { id = id, name = name })
-      end
-
-      -- Extract KeyboardLayout entries with proper name matching
-      local entries = {}
-      for block in result:gmatch("{[^}]+}") do
-        local layout_id = block:match('"KeyboardLayout ID"%s*=%s*(%d+)')
-        local layout_name = block:match('"KeyboardLayout Name"%s*=%s*([^;]+)')
-
-        if layout_id and layout_name then
-          -- Clean up the name (remove quotes and semicolons)
-          layout_name = layout_name:gsub('"', ''):gsub(';', ''):gsub('%s+$', '')
-          local source_id = "com.apple.keylayout." .. layout_id
-          table.insert(entries, { id = source_id, name = layout_name .. " (" .. source_id .. ")" })
-        end
-      end
-
-      -- Add keyboard layout entries
-      for _, entry in ipairs(entries) do
-        table.insert(sources, entry)
-      end
-
-      -- Extract Input Mode entries
-      for block in result:gmatch("{[^}]+}") do
-        local input_mode = block:match('"Input Mode"%s*=%s*"([^"]+)"')
-        if input_mode and not block:match('"InputSourceID"') then
-          local name = input_mode:match("%.([^.]+)$") or input_mode
-          table.insert(sources, { id = input_mode, name = name .. " (" .. input_mode .. ")" })
-        end
-      end
+  if source_list then
+    for _, id in ipairs(source_list) do
+      local name = id:match("%.([^.]+)$") or id
+      table.insert(sources, { id = id, name = name })
     end
   end
 
