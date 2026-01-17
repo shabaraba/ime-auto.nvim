@@ -121,8 +121,30 @@ local function create_commands()
       return
     end
 
+    -- Filter to only include useful input sources (exclude non-keyboard methods)
+    local filtered_sources = {}
+    for _, source in ipairs(sources) do
+      -- Exclude character palette and other non-keyboard input methods
+      if not source.id:match("CharacterPalette") and
+         not source.id:match("50onPalette") and
+         not source.id:match("PressAndHold") then
+        table.insert(filtered_sources, source)
+      end
+    end
+
+    if #filtered_sources == 0 then
+      vim.notify("[ime-auto] No suitable input sources found", vim.log.levels.ERROR)
+      return
+    end
+
+    sources = filtered_sources
+
     -- Create display list for inputlist
-    local display_list = {"Step 1/2: Select English input source (0 to cancel):"}
+    local display_list = {
+      "Step 1/2: Select English input source",
+      "Enter the number of your choice (or 0 to cancel):",
+      ""
+    }
     for i, source in ipairs(sources) do
       table.insert(display_list, string.format("%d. %s", i, source.name))
     end
@@ -152,7 +174,11 @@ local function create_commands()
     end
 
     -- For macism/im-select, ask for Japanese input
-    local ja_display_list = {"Step 2/2: Select Japanese input source (0 to cancel):"}
+    local ja_display_list = {
+      "Step 2/2: Select Japanese input source",
+      "Enter the number of your choice (or 0 to cancel):",
+      ""
+    }
     for i, source in ipairs(sources) do
       table.insert(ja_display_list, string.format("%d. %s", i, source.name))
     end

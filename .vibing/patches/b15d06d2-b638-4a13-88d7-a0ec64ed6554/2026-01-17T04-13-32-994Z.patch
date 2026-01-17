@@ -1,0 +1,40 @@
+diff --git a/lua/ime-auto/ime.lua b/lua/ime-auto/ime.lua
+index af456fc..cc24ab2 100644
+--- a/lua/ime-auto/ime.lua
++++ b/lua/ime-auto/ime.lua
+@@ -34,7 +34,10 @@ local function ime_control_macos(action)
+       return vim.fn.system("macime load")
+     elseif action == "status" then
+       local result = execute_command("macime get")
+-      return result and (result:match("Japanese") or result:match("Hiragana") or result:match("Katakana")) ~= nil
++      if not result then
++        return false
++      end
++      return (result:match("Japanese") or result:match("Hiragana") or result:match("Katakana")) ~= nil
+     end
+   elseif tool == "macism" then
+     if action == "off" then
+@@ -43,7 +46,10 @@ local function ime_control_macos(action)
+       return vim.fn.system("macism " .. ja_source)
+     elseif action == "status" then
+       local result = execute_command("macism")
+-      return result and (result:match("Japanese") or result:match("Hiragana") or result:match("Katakana") or result:match(ja_source)) ~= nil
++      if not result then
++        return false
++      end
++      return (result:match("Japanese") or result:match("Hiragana") or result:match("Katakana") or result:match(ja_source)) ~= nil
+     end
+   elseif tool == "im-select" then
+     if action == "off" then
+@@ -52,7 +58,10 @@ local function ime_control_macos(action)
+       return vim.fn.system("im-select " .. ja_source)
+     elseif action == "status" then
+       local result = execute_command("im-select")
+-      return result and (result:match("Japanese") or result:match("Hiragana") or result:match("Katakana") or result:match(ja_source)) ~= nil
++      if not result then
++        return false
++      end
++      return (result:match("Japanese") or result:match("Hiragana") or result:match("Katakana") or result:match(ja_source)) ~= nil
+     end
+   else
+     -- Default: osascript (built-in)
