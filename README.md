@@ -78,16 +78,26 @@ require("ime-auto").setup({
 ```lua
 require("ime-auto").setup({
   macos_ime_tool = "macime",
+  -- 日本語IME IDの指定は不要！
+  -- macimeが自動的に現在の日本語IMEを保存・復元します
 })
 ```
+
+**特徴：**
+- Google日本語入力、ATOK、Kotoeriなど、どの日本語IMEでも自動対応
+- 日本語IME IDの設定が不要で、最もシンプル
 
 インストール: [riodelphino/macime](https://github.com/riodelphino/macime)
 
 #### macismの使用（CJKV入力に最適）
 
+macismは、CJKV入力ソースの切り替えが最も確実なツールです：
+
 ```lua
 require("ime-auto").setup({
   macos_ime_tool = "macism",
+  -- 注意：macismは日本語IME IDの明示的な指定が必要です
+  -- 下の「入力ソースIDの確認方法」を参照してください
 })
 ```
 
@@ -98,33 +108,50 @@ require("ime-auto").setup({
 ```lua
 require("ime-auto").setup({
   macos_ime_tool = "im-select",
+  -- 注意：im-selectも日本語IME IDの明示的な指定が必要です
+  -- 下の「入力ソースIDの確認方法」を参照してください
 })
 ```
 
 インストール: [daipeihust/im-select](https://github.com/daipeihust/im-select)
 
-#### カスタム入力ソースIDの設定
+#### 入力ソースIDの確認方法
 
-システムの入力ソースIDが標準と異なる場合：
+**macism/im-selectを使用する場合**は、日本語IME IDを明示的に設定する必要があります。
+
+##### 方法1: プラグインのコマンドを使用（簡単）
+
+Neovim内で以下のコマンドを実行：
+
+```vim
+:ImeAutoListInputSources
+```
+
+利用可能な入力ソース一覧が表示されます。
+
+##### 方法2: ターミナルで確認
+
+```bash
+# macimeがインストールされている場合
+macime list
+
+# macismがインストールされている場合
+macism
+
+# im-selectがインストールされている場合
+im-select
+```
+
+##### 設定例（macism/im-select）
 
 ```lua
 require("ime-auto").setup({
-  macos_ime_tool = "macime",
-  macos_input_source_en = "com.apple.keylayout.US",  -- 英語入力ソースID
-  macos_input_source_ja = "com.apple.inputmethod.Kotoeri.Hiragana",  -- 日本語入力ソースID
+  macos_ime_tool = "macism",  -- または "im-select"
+  macos_input_source_en = "com.apple.keylayout.ABC",  -- 英語
+  macos_input_source_ja = "com.google.inputmethod.Japanese.base",  -- Google日本語入力の例
+  -- または "com.apple.inputmethod.Kotoeri.Hiragana" (Kotoeri)
+  -- または "jp.monokakido.inputmethod.ATOK.Roman" (ATOK)
 })
-```
-
-入力ソースIDを確認するには、ターミナルで以下を実行：
-```bash
-# macimeの場合
-macime list
-
-# macismの場合
-macism
-
-# im-selectの場合
-im-select
 ```
 
 ## コマンド
@@ -133,6 +160,7 @@ im-select
 - `:ImeAutoDisable` - IME自動切り替えを無効化
 - `:ImeAutoToggle` - IME自動切り替えのトグル
 - `:ImeAutoStatus` - 現在の状態を表示
+- `:ImeAutoListInputSources` - 利用可能な入力ソース一覧を表示（macOS専用）
 
 ## 動作原理
 

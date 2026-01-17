@@ -61,6 +61,50 @@ local function create_commands()
     local ime_status = M.ime.get_status() and "on" or "off"
     vim.notify(string.format("ime-auto: %s, IME: %s", status, ime_status))
   end, { desc = "Show IME auto status" })
+
+  M.utils.create_user_command("ListInputSources", function()
+    local result, err = M.ime.list_input_sources()
+    if err then
+      vim.notify("[ime-auto] " .. err, vim.log.levels.WARN)
+      return
+    end
+
+    if result then
+      -- Display in a new buffer
+      local buf = vim.api.nvim_create_buf(false, true)
+      local lines = vim.split(result, "\n")
+
+      -- Add header
+      local header = {
+        "=== Available Input Sources ===",
+        "",
+        "Copy the ID (e.g., 'com.apple.keylayout.ABC') and use it in your config:",
+        "",
+        "require('ime-auto').setup({",
+        "  macos_input_source_en = 'com.apple.keylayout.ABC',",
+        "  macos_input_source_ja = 'com.google.inputmethod.Japanese.base',",
+        "})",
+        "",
+        "---",
+        "",
+      }
+
+      for i = #header, 1, -1 do
+        table.insert(lines, 1, header[i])
+      end
+
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+      vim.api.nvim_buf_set_option(buf, 'modifiable', false)
+      vim.api.nvim_buf_set_option(buf, 'buftype', 'nofile')
+      vim.api.nvim_buf_set_option(buf, 'bufhidden', 'wipe')
+
+      -- Open in a split
+      vim.cmd('split')
+      vim.api.nvim_win_set_buf(0, buf)
+    else
+      vim.notify("[ime-auto] Failed to list input sources", vim.log.levels.ERROR)
+    end
+  end, { desc = "List available input sources (macOS only)" })
 end
 
 function M.setup(opts)
