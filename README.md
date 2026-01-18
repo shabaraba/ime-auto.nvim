@@ -7,8 +7,8 @@ Neovimで日本語入力時のIME（Input Method Editor）を自動的に制御�
 - **エスケープシーケンス**: insertモードで全角文字（デフォルト: `ｋｊ`）を入力してnormalモードへ移行
 - **IME自動切り替え**: normalモード、visualモード、commandモードでは自動的にIMEをOFF
 - **状態の自動記憶**: InsertモードとNormalモードのIME状態を記憶し、次回以降自動復元
-- **クロスプラットフォーム対応**: macOS、Windows、Linuxに対応
-- **macOSでは外部ツール不要**: 組み込みのSwiftツールを使用（初回起動時に自動コンパイル）
+- **macOS 完全対応**: 外部ツール不要、組み込みのSwiftツールを使用（初回起動時に自動コンパイル）
+- **Windows/Linux 実験的サポート**: PowerShell/fcitx-remote/ibus 経由（未テスト）
 
 ## インストール
 
