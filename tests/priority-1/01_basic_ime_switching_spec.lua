@@ -90,8 +90,8 @@ describe("Test 01: Basic IME switching", function()
   describe("1.6: IME state check availability", function()
     it("should be able to call get_status without error", function()
       local status = ime.get_status()
-      -- Status can be true, false, or nil depending on OS
-      assert.is_not_nil(status ~= nil or status == nil, "Should return some value")
+      -- Status should be boolean or nil depending on OS
+      assert.is_true(status == nil or type(status) == "boolean", "Should return boolean or nil")
     end)
   end)
 end)

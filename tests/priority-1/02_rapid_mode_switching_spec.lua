@@ -38,22 +38,17 @@ describe("Test 02: Rapid mode switching", function()
     end
   end)
 
-  describe("2.1: Debounce mechanism basic operation", function()
-    it("should debounce IME off calls", function()
-      -- Trigger InsertLeave (calls off_debounced)
+  describe("2.1: IME off operation", function()
+    it("should call IME off immediately", function()
+      -- Trigger InsertLeave (calls off directly, no debounce)
       vim.cmd("doautocmd InsertLeave")
 
-      -- Wait less than debounce time
-      vim.wait(50) -- 50ms < 100ms debounce
-      local early_call_count = call_count
+      -- Wait for call to complete
+      vim.wait(50)
+      local after_leave = call_count
 
-      -- Wait for debounce to complete
-      vim.wait(100) -- Total 150ms > 100ms debounce
-      local late_call_count = call_count
-
-      -- System call should happen after debounce
-      assert.is_true(late_call_count > early_call_count or late_call_count >= 0,
-        "Debounce should delay system call")
+      -- System call should happen immediately
+      assert.is_true(after_leave > 0, "Should call IME off immediately")
     end)
   end)
 
@@ -124,7 +119,14 @@ describe("Test 02: Rapid mode switching", function()
 
   describe("2.5: Cache TTL (500ms) behavior", function()
     it("should expire cache after TTL", function()
+      -- Override spy to count "status" calls
       call_count = 0
+      ime.control = function(action)
+        if action == "status" then
+          call_count = call_count + 1
+        end
+        return original_control(action)
+      end
 
       -- Create cache
       ime.get_status()
@@ -139,9 +141,8 @@ describe("Test 02: Rapid mode switching", function()
       vim.wait(200)
       ime.get_status()
 
-      -- Should make new system call
-      assert.is_true(call_count > cached_call_count or call_count == cached_call_count,
-        "Cache behavior after TTL")
+      -- Should make new system call after cache expires
+      assert.is_true(call_count > cached_call_count, "Should make new system call after TTL expired")
     end)
   end)
 
