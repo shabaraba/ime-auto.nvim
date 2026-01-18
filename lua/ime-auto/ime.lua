@@ -1,20 +1,8 @@
---- IME Control Module
----
---- This module provides cross-platform IME (Input Method Editor) control functionality.
---- It supports:
---- - macOS (via Swift tool using Carbon APIs)
---- - Windows (via PowerShell)
---- - Linux (via fcitx-remote or ibus)
----
---- Features:
---- - Toggle-based IME switching with slot management
---- - IME state caching (500ms TTL) to reduce system calls
---- - Debounced mode change handlers (100ms) for performance
---- - Automatic platform detection
----
+--- IME Control Module for cross-platform IME management
 --- @module ime-auto.ime
 
 local M = {}
+local utils = require("ime-auto.utils")
 
 local last_ime_state = nil
 
@@ -22,17 +10,12 @@ local last_ime_state = nil
 local ime_state_cache = {
   value = nil,
   timestamp = 0,
-  ttl_ms = 500  -- Cache for 500ms
+  ttl_ms = 500
 }
 
 -- Debounce timer for mode changes
 local mode_change_timer = nil
 local MODE_CHANGE_DEBOUNCE_MS = 100
-
-local function trim(str)
-  if not str then return nil end
-  return str:gsub("^%s+", ""):gsub("%s+$", "")
-end
 
 local function execute_command(cmd)
   if not cmd then return nil end
@@ -42,7 +25,7 @@ local function execute_command(cmd)
 
   local result = handle:read("*a")
   handle:close()
-  return trim(result)
+  return utils.trim(result)
 end
 
 local function ime_control_macos(action)

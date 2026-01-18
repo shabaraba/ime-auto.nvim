@@ -6,8 +6,23 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SWIFT_SOURCE="$PROJECT_ROOT/swift/ime-tool.swift"
 OUTPUT_DIR="$PROJECT_ROOT/bin"
 OUTPUT_BINARY="$OUTPUT_DIR/swift-ime"
+TEMP_DIR="$OUTPUT_DIR"
+
+# Cleanup function
+cleanup() {
+  rm -f "$TEMP_DIR/swift-ime-x86_64" "$TEMP_DIR/swift-ime-arm64"
+}
+trap cleanup EXIT
 
 echo "Building Universal Binary for ime-auto.nvim..."
+
+# Check if swiftc is available
+if ! command -v swiftc &> /dev/null; then
+  echo "❌ Error: swiftc not found!"
+  echo "Please install Xcode Command Line Tools:"
+  echo "  xcode-select --install"
+  exit 1
+fi
 
 # Create output directory
 mkdir -p "$OUTPUT_DIR"
@@ -30,9 +45,6 @@ lipo -create \
   "$OUTPUT_DIR/swift-ime-x86_64" \
   "$OUTPUT_DIR/swift-ime-arm64" \
   -output "$OUTPUT_BINARY"
-
-# Clean up individual binaries
-rm -f "$OUTPUT_DIR/swift-ime-x86_64" "$OUTPUT_DIR/swift-ime-arm64"
 
 # Verify
 echo "Verifying Universal Binary..."
