@@ -16,22 +16,41 @@ Neovimで日本語入力時のIME（Input Method Editor）を自動的に制御�
 
 ### [lazy.nvim](https://github.com/folke/lazy.nvim)
 
+**最小設定（推奨）**:
+```lua
+{
+  "shabaraba/ime-auto.nvim",
+  event = "InsertEnter",
+}
+```
+
+**カスタマイズする場合**:
 ```lua
 {
   "shabaraba/ime-auto.nvim",
   event = "InsertEnter",
   config = function()
     require("ime-auto").setup({
-      -- オプション設定（デフォルト値）
-      escape_sequence = "ｋｊ",  -- エスケープシーケンス（全角文字）
-      escape_timeout = 200,      -- タイムアウト（ミリ秒）
-      os = "auto",              -- OS設定: "auto", "macos", "windows", "linux"
-      ime_method = "builtin",   -- IME制御方法: "builtin", "custom"
-      debug = false,            -- デバッグモード
+      escape_sequence = "ｊｊ",  -- エスケープシーケンスを変更したい場合のみ
     })
   end,
 }
 ```
+
+<details>
+<summary>全設定オプション（通常は不要）</summary>
+
+```lua
+require("ime-auto").setup({
+  escape_sequence = "ｋｊ",  -- エスケープシーケンス（全角文字）
+  escape_timeout = 200,      -- タイムアウト（ミリ秒）
+  os = "auto",              -- OS設定: "auto", "macos", "windows", "linux"
+  ime_method = "builtin",   -- IME制御方法: "builtin", "custom"
+  debug = false,            -- デバッグモード
+})
+```
+
+</details>
 
 ## 初回セットアップ
 
@@ -44,12 +63,11 @@ Neovimで日本語入力時のIME（Input Method Editor）を自動的に制御�
 
 ## 設定
 
-### 基本設定
+### エスケープシーケンスのカスタマイズ
 
 ```lua
 require("ime-auto").setup({
-  escape_sequence = "ｊｊ",  -- エスケープシーケンスを変更
-  escape_timeout = 300,      -- タイムアウトを長めに設定
+  escape_sequence = "ｊｊ",  -- デフォルトは "ｋｊ"
 })
 ```
 
