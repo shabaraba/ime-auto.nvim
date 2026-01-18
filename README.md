@@ -37,20 +37,6 @@ Neovimで日本語入力時のIME（Input Method Editor）を自動的に制御�
 }
 ```
 
-<details>
-<summary>全設定オプション（通常は不要）</summary>
-
-```lua
-require("ime-auto").setup({
-  escape_sequence = "ｋｊ",  -- エスケープシーケンス（全角文字）
-  escape_timeout = 200,      -- タイムアウト（ミリ秒）
-  os = "auto",              -- OS設定: "auto", "macos", "windows", "linux"
-  ime_method = "builtin",   -- IME制御方法: "builtin", "custom"
-  debug = false,            -- デバッグモード
-})
-```
-
-</details>
 
 ## 初回セットアップ
 
@@ -63,36 +49,11 @@ require("ime-auto").setup({
 
 ## 設定
 
-### エスケープシーケンスのカスタマイズ
+ほとんどの場合、設定は不要です。エスケープシーケンスを変更したい場合のみ：
 
 ```lua
 require("ime-auto").setup({
   escape_sequence = "ｊｊ",  -- デフォルトは "ｋｊ"
-})
-```
-
-### カスタムIME制御コマンド
-
-特殊なIME環境の場合、カスタムコマンドを設定できます：
-
-```lua
-require("ime-auto").setup({
-  ime_method = "custom",
-  custom_commands = {
-    on = "your-ime-on-command",
-    off = "your-ime-off-command",
-    status = "your-ime-status-command",  -- 戻り値が "1" または "true" の場合、IME ONと判定
-  },
-})
-```
-
-### OS別の設定
-
-自動検出がうまくいかない場合は、明示的にOSを指定できます：
-
-```lua
-require("ime-auto").setup({
-  os = "macos",  -- "macos", "windows", "linux"
 })
 ```
 
