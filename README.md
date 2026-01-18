@@ -62,6 +62,11 @@ swiftc --version
 
 ## 📚 使い方
 
+詳細なドキュメントは Neovim 内で参照できます：
+```vim
+:help ime-auto
+```
+
 ### 基本動作
 
 インストール後、特別な操作は不要です：
@@ -103,9 +108,18 @@ Insert モードで日本語入力中
 - ✅ 全角文字 `ｋｊ` で入力していることを確認
 - ✅ 入力を確定（エンター）してください
 
-### macOS でコンパイルエラー
+### macOS で動作しない
 
-Xcode Command Line Tools をインストール：
+**通常は不要**: ime-auto.nvim はコンパイル済みの Universal Binary（Intel/Apple Silicon 両対応）を同梱しています。Xcode のインストールは不要です。
+
+**それでもエラーが出る場合**: まれにバイナリが見つからない場合、以下のコマンドで手動ビルドできます：
+
+```bash
+cd ~/.local/share/nvim/lazy/ime-auto.nvim  # または your/plugin/path
+./scripts/build-universal-binary.sh
+```
+
+**Xcode Command Line Tools が必要な場合**:
 
 ```bash
 xcode-select --install

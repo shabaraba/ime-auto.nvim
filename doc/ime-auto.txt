@@ -1,0 +1,204 @@
+*ime-auto.txt*  Neovim で日本語入力時の IME を自動制御
+
+Author:  shabaraba <https://github.com/shabaraba>
+License: MIT License
+Version: 1.0.0
+
+==============================================================================
+CONTENTS                                                  *ime-auto-contents*
+
+    1. Introduction .......................... |ime-auto-introduction|
+    2. Features .............................. |ime-auto-features|
+    3. Requirements .......................... |ime-auto-requirements|
+    4. Installation .......................... |ime-auto-installation|
+    5. Usage ................................. |ime-auto-usage|
+    6. Configuration ......................... |ime-auto-configuration|
+    7. Commands .............................. |ime-auto-commands|
+    8. Troubleshooting ....................... |ime-auto-troubleshooting|
+    9. License ............................... |ime-auto-license|
+
+==============================================================================
+1. INTRODUCTION                                      *ime-auto-introduction*
+
+ime-auto.nvim は、Neovim で日本語を快適に編集するために、モード切り替え時の
+IME 状態を自動管理するプラグインです。
+
+主な機能:
+- Insert/Normal モード切り替え時の IME 自動制御
+- 全角エスケープシーケンス（デフォルト: `ｋｊ`）
+- IME 状態の永続化と自動復元
+- macOS ネイティブサポート（外部ツール不要）
+
+==============================================================================
+2. FEATURES                                              *ime-auto-features*
+
+ゼロコンフィグ~
+    インストールするだけで動作、設定不要
+
+エスケープシーケンス~
+    全角 `ｋｊ` で Insert → Normal へスムーズに移行
+
+自動切り替え~
+    モード変更時に IME を自動 ON/OFF
+
+状態記憶~
+    Insert/Normal モードの IME 状態を永続化
+
+macOS ネイティブ~
+    外部ツール不要、Swift で Carbon API 経由制御
+
+Windows/Linux サポート~
+    実験的サポート（PowerShell/fcitx-remote/ibus 経由）
+
+==============================================================================
+3. REQUIREMENTS                                      *ime-auto-requirements*
+
+- Neovim >= 0.8.0
+- macOS の場合: Xcode Command Line Tools (`swiftc` コマンド)
+
+macOS での確認方法: >
+    swiftc --version
+<
+
+Xcode Command Line Tools のインストール: >
+    xcode-select --install
+<
+
+==============================================================================
+4. INSTALLATION                                      *ime-auto-installation*
+
+lazy.nvim~
+>
+    {
+      "shabaraba/ime-auto.nvim",
+      event = "InsertEnter",
+    }
+<
+
+設定不要で動作します！インストールするだけで IME の自動制御が有効になります。
+
+エスケープシーケンスをカスタマイズする場合: >
+    {
+      "shabaraba/ime-auto.nvim",
+      event = "InsertEnter",
+      config = function()
+        require("ime-auto").setup({
+          escape_sequence = "ｊｊ",  -- デフォルトは "ｋｊ"
+        })
+      end,
+    }
+<
+
+==============================================================================
+5. USAGE                                                    *ime-auto-usage*
+
+基本動作~
+
+インストール後、特別な操作は不要です:
+
+- Insert モード: 前回の IME 状態を自動復元
+- Normal モード: IME を自動 OFF
+- Insert モード復帰: IME を自動 ON（前回が ON だった場合）
+
+エスケープシーケンス~
+
+全角文字 `ｋｊ` を入力すると、Insert モードから Normal モードへ移行:
+
+    Insert モードで日本語入力中
+      ↓
+    「ｋｊ」と入力（全角）
+      ↓
+    自動的に Normal モードへ移行
+
+注意:
+- 半角の `kj` では動作しません（全角文字が必要）
+- 入力確定（エンター）が必要です
+
+==============================================================================
+6. CONFIGURATION                                    *ime-auto-configuration*
+
+                                                            *ime-auto.setup()*
+ime-auto.setup({config})
+    プラグインを設定します。
+
+    Parameters: ~
+        {config} (table|nil) 設定オプション
+
+    Configuration options: ~
+        escape_sequence (string)
+            エスケープシーケンスに使用する全角文字列
+            デフォルト: "ｋｊ"
+
+    Example: >
+        require("ime-auto").setup({
+          escape_sequence = "ｊｊ",
+        })
+<
+
+==============================================================================
+7. COMMANDS                                              *ime-auto-commands*
+
+:ImeAutoEnable                                              *:ImeAutoEnable*
+    IME 自動切り替えを有効化します。
+
+:ImeAutoDisable                                            *:ImeAutoDisable*
+    IME 自動切り替えを無効化します。
+
+:ImeAutoToggle                                              *:ImeAutoToggle*
+    IME 自動切り替えの有効/無効を切り替えます。
+
+:ImeAutoStatus                                              *:ImeAutoStatus*
+    現在の IME 自動切り替えの状態を表示します。
+
+:ImeAutoListInputSources                          *:ImeAutoListInputSources*
+    利用可能な入力ソースの一覧を表示します（macOS のみ）。
+
+==============================================================================
+8. TROUBLESHOOTING                              *ime-auto-troubleshooting*
+
+エスケープシーケンスが動作しない~
+
+- 全角文字 `ｋｊ` で入力していることを確認
+- 入力を確定（エンター）してください
+
+macOS でコンパイルエラー~
+
+Xcode Command Line Tools をインストール: >
+    xcode-select --install
+<
+
+デバッグモード~
+
+問題が解決しない場合、デバッグモードで詳細を確認: >
+    require("ime-auto").setup({ debug = true })
+<
+
+`:messages` でログを確認できます。
+
+==============================================================================
+9. LICENSE                                                *ime-auto-license*
+
+MIT License
+
+Copyright (c) 2024 shabaraba
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:

@@ -1,0 +1,17 @@
+:ImeAutoDisable	ime-auto.txt	/*:ImeAutoDisable*
+:ImeAutoEnable	ime-auto.txt	/*:ImeAutoEnable*
+:ImeAutoListInputSources	ime-auto.txt	/*:ImeAutoListInputSources*
+:ImeAutoStatus	ime-auto.txt	/*:ImeAutoStatus*
+:ImeAutoToggle	ime-auto.txt	/*:ImeAutoToggle*
+ime-auto-commands	ime-auto.txt	/*ime-auto-commands*
+ime-auto-configuration	ime-auto.txt	/*ime-auto-configuration*
+ime-auto-contents	ime-auto.txt	/*ime-auto-contents*
+ime-auto-features	ime-auto.txt	/*ime-auto-features*
+ime-auto-installation	ime-auto.txt	/*ime-auto-installation*
+ime-auto-introduction	ime-auto.txt	/*ime-auto-introduction*
+ime-auto-license	ime-auto.txt	/*ime-auto-license*
+ime-auto-requirements	ime-auto.txt	/*ime-auto-requirements*
+ime-auto-troubleshooting	ime-auto.txt	/*ime-auto-troubleshooting*
+ime-auto-usage	ime-auto.txt	/*ime-auto-usage*
+ime-auto.setup()	ime-auto.txt	/*ime-auto.setup()*
+ime-auto.txt	ime-auto.txt	/*ime-auto.txt*
