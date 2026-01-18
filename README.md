@@ -1,17 +1,23 @@
 # ime-auto.nvim
 
-Neovimで日本語入力時のIME（Input Method Editor）を自動的に制御するプラグインです。
+> Neovim で日本語入力時の IME を自動制御するプラグイン
 
-## 特徴
+Neovim で日本語を快適に編集するために、モード切り替え時の IME 状態を自動管理します。
 
-- insertモードでのエスケープシーケンス（デフォルト: `ｋｊ`）でnormalモードへ移行
-- normalモード、visualモード、commandモードでは自動的にIMEをOFF
-- insertモードに入る際、前回のIME状態を自動復元
-- macOS、Windows、Linuxに対応
-- **macOSでは外部ツール不要**：組み込みのSwiftベースIMEツールを使用
-- 高速で信頼性の高いIME切り替え
+## ✨ 特徴
 
-## インストール
+- 🎯 **ゼロコンフィグ**: インストールするだけで動作、設定不要
+- ⌨️ **エスケープシーケンス**: 全角 `ｋｊ` で Insert → Normal へスムーズに移行
+- 🔄 **自動切り替え**: モード変更時に IME を自動 ON/OFF
+- 💾 **状態記憶**: Insert/Normal モードの IME 状態を永続化
+- 🍎 **macOS ネイティブ**: コンパイル不要、Universal Binary 同梱（Intel/Apple Silicon 対応）
+- 🌐 **Windows/Linux**: 実験的サポート（PowerShell/fcitx-remote/ibus）
+
+## 📦 必要環境
+
+- Neovim >= 0.8.0
+
+## 🚀 インストール
 
 ### [lazy.nvim](https://github.com/folke/lazy.nvim)
 
@@ -19,208 +25,95 @@ Neovimで日本語入力時のIME（Input Method Editor）を自動的に制御�
 {
   "shabaraba/ime-auto.nvim",
   event = "InsertEnter",
+}
+```
+
+**設定不要で動作します！** インストールするだけで IME の自動制御が有効になります。
+
+<details>
+<summary>エスケープシーケンスをカスタマイズする場合</summary>
+
+```lua
+{
+  "shabaraba/ime-auto.nvim",
+  event = "InsertEnter",
   config = function()
     require("ime-auto").setup({
-      -- オプション設定（デフォルト値）
-      escape_sequence = "ｋｊ",  -- エスケープシーケンス（全角文字）
-      escape_timeout = 200,      -- タイムアウト（ミリ秒）
-      os = "auto",              -- OS設定: "auto", "macos", "windows", "linux"
-      ime_method = "builtin",   -- IME制御方法: "builtin", "custom"
-      debug = false,            -- デバッグモード
+      escape_sequence = "ｊｊ",  -- デフォルトは "ｋｊ"
     })
   end,
 }
 ```
 
-## 初回セットアップ
+</details>
 
-**設定不要で使えます！**
+## 📚 使い方
 
-プラグインをインストールして、普通にNeovimを使うだけでOKです。
-- InsertモードとNormalモードのIME状態を自動的に記憶
-- 次回以降は自動的に復元されます
-- Google日本語入力、ATOK、Kotoeriなど、どの日本語IMEでも自動対応
-
-## 設定
-
-### 基本設定
-
-```lua
-require("ime-auto").setup({
-  escape_sequence = "ｊｊ",  -- エスケープシーケンスを変更
-  escape_timeout = 300,      -- タイムアウトを長めに設定
-})
+詳細なドキュメントは Neovim 内で参照できます：
+```vim
+:help ime-auto
 ```
 
-### カスタムIME制御コマンド
+### 基本動作
 
-特殊なIME環境の場合、カスタムコマンドを設定できます：
+インストール後、特別な操作は不要です：
 
-```lua
-require("ime-auto").setup({
-  ime_method = "custom",
-  custom_commands = {
-    on = "your-ime-on-command",
-    off = "your-ime-off-command",
-    status = "your-ime-status-command",  -- 戻り値が "1" または "true" の場合、IME ONと判定
-  },
-})
+- **Insert モード**: 前回の IME 状態を自動復元
+- **Normal モード**: IME を自動 OFF
+- **Insert モード復帰**: IME を自動 ON（前回が ON だった場合）
+
+### コマンド
+
+| コマンド | 説明 |
+|---------|------|
+| `:ImeAutoEnable` | IME 自動切り替えを有効化 |
+| `:ImeAutoDisable` | IME 自動切り替えを無効化 |
+| `:ImeAutoToggle` | 有効/無効を切り替え |
+| `:ImeAutoStatus` | 現在の状態を表示 |
+| `:ImeAutoListInputSources` | 入力ソース一覧（macOS のみ） |
+
+### エスケープシーケンス
+
+全角文字 `ｋｊ` を入力すると、Insert モードから Normal モードへ移行します：
+
+```
+Insert モードで日本語入力中
+  ↓
+「ｋｊ」と入力（全角）
+  ↓
+自動的に Normal モードへ移行
 ```
 
-### OS別の設定
+**注意**:
+- 半角の `kj` では動作しません（全角文字が必要）
+- 入力確定（エンター）が必要です
 
-自動検出がうまくいかない場合は、明示的にOSを指定できます：
-
-```lua
-require("ime-auto").setup({
-  os = "macos",  -- "macos", "windows", "linux"
-})
-```
-
-## コマンド
-
-### 基本コマンド
-
-- `:ImeAutoEnable` - IME自動切り替えを有効化
-- `:ImeAutoDisable` - IME自動切り替えを無効化
-- `:ImeAutoToggle` - IME自動切り替えのトグル
-- `:ImeAutoStatus` - 現在の状態を表示
-- `:ImeAutoListInputSources` - 利用可能な入力ソース一覧を表示（macOS専用、参考用）
-
-## 動作原理
-
-1. **エスケープシーケンス**: insertモードで設定された全角文字列（例：`ｋｊ`）を入力するとnormalモードに移行
-2. **IME制御**: 各OS標準の方法でIMEを制御
-   - macOS: 組み込みのSwiftツール（初回起動時に自動コンパイル）
-   - Windows: PowerShellを使用
-   - Linux: `fcitx-remote`または`ibus`を使用（インストール済みの場合）
-3. **状態管理**: 2つのIME状態（InsertモードとNormalモード）を自動保存し、モード切り替え時にトグル
-
-## macOSの組み込みSwiftツールについて
-
-ime-auto.nvimは、macOSでIME切り替えを行うための専用Swiftツールを内蔵しています：
-
-- **システムSwiftコンパイラを使用**: macOSの`swiftc`コマンドが必要（通常、Xcode Command Line Toolsに含まれます）
-- **初回起動時に自動コンパイル**: `~/.local/share/nvim/ime-auto/swift-ime`に生成
-- **高速で信頼性が高い**: macOSのCarbon APIを直接使用
-- **自動状態管理**: InsertモードとNormalモードのIME状態を2つのスロット（slot A/B）に保存し、モード切り替え時に自動トグル
-- **設定不要**: 使い始めた瞬間から、あなたのIME使用パターンを学習して記憶
-
-### swiftcが見つからない場合
-
-`swiftc`コマンドがシステムにない場合、以下のコマンドでXcode Command Line Toolsをインストールしてください：
-
-```bash
-xcode-select --install
-```
-
-インストール後、以下のコマンドで確認できます：
-
-```bash
-swiftc --version
-```
-
-## トラブルシューティング
-
-### IMEが切り替わらない
-
-1. デバッグモードを有効にして動作を確認：
-   ```lua
-   require("ime-auto").setup({ debug = true })
-   ```
-
-2. OS設定を明示的に指定：
-   ```lua
-   require("ime-auto").setup({ os = "macos" })  -- お使いのOSに合わせて変更
-   ```
-
-3. カスタムコマンドを使用：
-   ```lua
-   require("ime-auto").setup({
-     ime_method = "custom",
-     custom_commands = {
-       on = "your-custom-ime-on-command",
-       off = "your-custom-ime-off-command",
-     },
-   })
-   ```
+## 🔧 トラブルシューティング
 
 ### エスケープシーケンスが動作しない
 
-- 全角文字で入力していることを確認してください（`ｋｊ`は全角です）
-- タイムアウトを長めに設定してみてください：
-  ```lua
-  require("ime-auto").setup({ escape_timeout = 500 })
-  ```
+- ✅ 全角文字 `ｋｊ` で入力していることを確認
+- ✅ 入力を確定（エンター）してください
 
-### macOSでSwiftツールのコンパイルに失敗する
+### デバッグモード
 
-Swiftコンパイラがインストールされていない可能性があります。以下のコマンドで確認：
-
-```bash
-swiftc --version
-```
-
-Xcodeまたは Xcode Command Line Tools をインストールしてください：
-
-```bash
-xcode-select --install
-```
-
-## テスト
-
-### 単体テスト（Unit Tests）
-
-Plenary.nvimを使った自動テストを実行：
-
-```bash
-nvim --headless -u tests/minimal_init.lua \
-  -c "PlenaryBustedDirectory tests/priority-1/ { minimal_init = 'tests/minimal_init.lua' }" \
-  -c "qa!"
-```
-
-**テストカバレッジ**:
-- ✅ 基本的なIME切り替え（8テスト）
-- ✅ 高速モード切り替え（6テスト）
-- ✅ マルチバイト文字境界（13テスト）
-
-### E2Eテスト / 動作確認テスト
-
-#### 自動テスト（vibing.nvim推奨）
-
-vibing.nvimを使った自動実行：
-
-```vim
-:source tests/e2e/vibing_execution_script.lua
-```
-
-または、Luaから直接実行：
+問題が解決しない場合、デバッグモードで詳細を確認：
 
 ```lua
-package.path = package.path .. ";" .. vim.fn.getcwd() .. "/?.lua"
-local e2e = require("tests.e2e.vibing_test_runner")
-e2e.run_all_tests()
+require("ime-auto").setup({ debug = true })
 ```
 
-#### 手動テスト
+`:messages` でログを確認できます。
 
-実際のIME切り替え動作を確認する場合は、以下のドキュメントを参照：
+## 🤝 CONTRIBUTING
 
-- 📖 **[MANUAL_TEST_GUIDE.md](tests/e2e/MANUAL_TEST_GUIDE.md)** - 詳細なテスト手順
-- 📖 **[VIBING_EXECUTION_GUIDE.md](tests/e2e/VIBING_EXECUTION_GUIDE.md)** - vibing.nvim向け実行ガイド
+Issue 報告や Pull Request を歓迎します！
 
-**主なテストシナリオ**:
-- E2E-01: 基本的なIME切り替え（英語→日本語）
-- E2E-02: スロット永続化（再起動後も保持）
-- E2E-03: 複数バッファでの動作
-- E2E-04: Command modeでの動作
-- E2E-05: エスケープシーケンス（ｋｊ）
-- E2E-06: 高速モード切り替え
+開発に関する詳細：
+- 📖 [CONTRIBUTING.md](CONTRIBUTING.md) - 貢献ガイド
+- 📖 [CLAUDE.md](CLAUDE.md) - 開発ガイド（アーキテクチャ、実装詳細）
 
-## ライセンス
+## 📄 LICENSE
 
 MIT License
 
-## 貢献
-
-Issue報告やPull Requestを歓迎します！

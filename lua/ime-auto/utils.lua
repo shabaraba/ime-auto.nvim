@@ -31,4 +31,9 @@ function M.create_user_command(name, func, opts)
   vim.api.nvim_create_user_command("ImeAuto" .. name, func, opts or {})
 end
 
+function M.trim(str)
+  if not str then return nil end
+  return str:gsub("^%s+", ""):gsub("%s+$", "")
+end
+
 return M
