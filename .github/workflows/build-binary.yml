@@ -1,0 +1,48 @@
+name: Verify Universal Binary
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check if binary exists
+        run: |
+          if [ ! -f bin/swift-ime ]; then
+            echo "❌ Error: bin/swift-ime not found!"
+            echo "Please run ./scripts/build-and-commit.sh to build and commit the binary."
+            exit 1
+          fi
+          echo "✅ Binary found: bin/swift-ime"
+
+      - name: Verify binary is Universal Binary
+        run: |
+          echo "Binary info:"
+          lipo -info bin/swift-ime
+
+          # Check if both architectures are present
+          if lipo -info bin/swift-ime | grep -q "x86_64" && lipo -info bin/swift-ime | grep -q "arm64"; then
+            echo "✅ Universal Binary verified (x86_64 + arm64)"
+          else
+            echo "❌ Error: Not a Universal Binary or missing architectures"
+            exit 1
+          fi
+
+      - name: Test binary execution
+        run: |
+          echo "Testing binary execution..."
+          ./bin/swift-ime list || echo "Note: IME list command may fail in CI environment (no GUI)"
+
+      - name: Display binary info
+        run: |
+          echo "Binary details:"
+          file bin/swift-ime
+          ls -lh bin/swift-ime

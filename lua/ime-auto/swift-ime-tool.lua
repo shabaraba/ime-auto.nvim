@@ -86,38 +86,67 @@ local function needs_recompilation(source_path, binary_path)
   return source_mtime > binary_mtime
 end
 
--- Compile Swift tool if not already compiled
+-- Get plugin root directory
+local function get_plugin_root()
+  local source = debug.getinfo(1, "S").source
+  if source:sub(1, 1) == "@" then
+    source = source:sub(2)
+  end
+  return vim.fn.fnamemodify(source, ":h:h:h")
+end
+
+-- Find precompiled binary (priority: plugin bin/ > user-compiled)
+local function find_precompiled_binary()
+  local plugin_root = get_plugin_root()
+  local precompiled_path = plugin_root .. "/bin/swift-ime"
+
+  if vim.fn.filereadable(precompiled_path) == 1 then
+    return precompiled_path
+  end
+
+  return nil
+end
+
+-- Ensure Swift binary is available (precompiled or user-compiled)
 function M.ensure_compiled()
   if swift_bin_path and vim.fn.filereadable(swift_bin_path) == 1 then
     return true
   end
 
+  -- Priority 1: Check for precompiled binary in plugin bin/
+  local precompiled = find_precompiled_binary()
+  if precompiled then
+    swift_bin_path = precompiled
+    return true
+  end
+
+  -- Priority 2: Check for user-compiled binary in stdpath('data')
   local data_dir = vim.fn.stdpath('data')
   local ime_dir = data_dir .. '/ime-auto'
+  local user_binary = ime_dir .. '/swift-ime'
   local source_path = ime_dir .. '/swift-ime.swift'
-  swift_bin_path = ime_dir .. '/swift-ime'
 
   -- Create directory if it doesn't exist
   vim.fn.mkdir(ime_dir, 'p')
 
-  -- Check if binary already exists and is up-to-date
-  if vim.fn.filereadable(swift_bin_path) == 1 then
+  -- Check if user-compiled binary exists and is up-to-date
+  if vim.fn.filereadable(user_binary) == 1 then
     local swift_src_path = get_swift_source_path()
-    if not needs_recompilation(swift_src_path, swift_bin_path) then
+    if not needs_recompilation(swift_src_path, user_binary) then
+      swift_bin_path = user_binary
       return true
     end
   end
 
-  -- Lazy-load Swift source code on first compile
+  -- Priority 3: Fallback - compile from source (requires Xcode tools)
   if not swift_source then
     local err
     swift_source, err = load_swift_source()
     if not swift_source then
-      return false, err
+      return false, err .. "\n\nPlease install Xcode Command Line Tools: xcode-select --install"
     end
   end
 
-  -- Write Swift source code
   local file = io.open(source_path, 'w')
   if not file then
     return false, "Failed to open Swift source file for writing: " .. source_path
@@ -134,14 +163,14 @@ function M.ensure_compiled()
     return false, "Failed to close Swift source file " .. source_path .. ": " .. tostring(close_err)
   end
 
-  -- Compile Swift code
-  local compile_cmd = string.format('swiftc "%s" -o "%s" 2>&1', source_path, swift_bin_path)
+  local compile_cmd = string.format('swiftc "%s" -o "%s" 2>&1', source_path, user_binary)
   local result = vim.fn.system(compile_cmd)
 
   if vim.v.shell_error ~= 0 then
-    return false, "Failed to compile Swift tool: " .. result
+    return false, "Failed to compile Swift tool: " .. result .. "\n\nPlease install Xcode Command Line Tools: xcode-select --install"
   end
 
+  swift_bin_path = user_binary
   return true
 end
 
