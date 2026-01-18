@@ -1,6 +1,6 @@
 # ime-auto.nvim 手動E2Eテスト結果レポート
 
-**テスト実施日**: 2025-01-18
+**テスト実施日**: 2026-01-18
 **テスト環境**: macOS, Neovim (vibing.nvim MCP tools使用)
 **テスト対象**: ime-auto.nvim プラグイン
 
@@ -153,7 +153,7 @@ ls -l ~/.local/share/nvim/ime-auto/swift-ime*
 ```
 
 - ✅ Swiftソースファイルとバイナリが存在
-- ✅ mtimeが一致（2025-01-18 08:44）
+- ✅ mtimeが一致（2026-01-18 08:44）
 - ✅ バイナリが正常に実行され、現在のIMEを返す: `com.apple.keylayout.ABC`
 - ✅ 実行権限が正しく設定されている
 
@@ -412,5 +412,5 @@ end
 
 ---
 
-**レポート作成日**: 2025-01-18
+**レポート作成日**: 2026-01-18
 **作成者**: Claude Code (AI E2E Testing Agent)

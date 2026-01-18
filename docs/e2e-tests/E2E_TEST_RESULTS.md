@@ -252,7 +252,7 @@ Manual E2E testing was conducted using vibing.nvim MCP tools to verify the funct
 -- lua/ime-auto/ui.lua, line ~89
 local char = vim.fn.getchar()
 -- This blocks indefinitely until user input
-```
+```vim
 
 **Recommendation**:
 1. Replace `vim.fn.getchar()` with `vim.fn.getcharstr({timeout = 5000})`
@@ -295,7 +295,7 @@ The following tests were not executed due to time constraints or test environmen
     os = "macos"  -- Auto-detected correctly
   }
 }
-```
+```vim
 
 **Autocmds Registered**:
 - Group: `ime_auto`

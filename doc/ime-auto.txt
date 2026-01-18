@@ -129,9 +129,14 @@ ime-auto.setup({config})
             エスケープシーケンスに使用する全角文字列
             デフォルト: "ｋｊ"
 
+        debug (boolean)
+            デバッグモードを有効化（詳細なログ出力）
+            デフォルト: false
+
     Example: >
         require("ime-auto").setup({
           escape_sequence = "ｊｊ",
+          debug = true,
         })
 <
 

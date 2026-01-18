@@ -32,7 +32,7 @@
 ## 関連ファイル
 
 - `/swift/ime-tool.swift` (L105-156: toggle実装, L89-103: slot読み書き)
-- `/lua/ime-auto/swift-ime-tool.lua` (L148-177: Lua側インターフェース)
+- `/lua/ime-auto/swift-ime-tool.lua` (L116-140: Lua側インターフェース)
 - `/lua/ime-auto/ime.lua` (L199-216: macOS固有のrestore_state)
 
 ## 前提条件

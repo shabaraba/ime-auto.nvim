@@ -1,6 +1,6 @@
 # ime-auto.nvim 手動E2Eテスト実行結果
 
-**実行日時**: 2025-01-18
+**実行日時**: 2026-01-18
 **テスト環境**: macOS (Neovim + vibing.nvim MCP tools)
 **テスト方法**: vibing.nvim MCPツールを使用した実際のNeovimインスタンス上での手動E2Eテスト
 
@@ -121,8 +121,8 @@ call feedkeys("ｋｊ", "nx")
 # コンパイル済みファイルの確認
 ls -l ~/.local/share/nvim/ime-auto/swift-ime*
 # 結果:
-# -rwxr-xr-x  swift-ime (102760 bytes, 2025-01-18 08:44)
-# -rw-r--r--  swift-ime.swift (8057 bytes, 2025-01-18 08:44)
+# -rwxr-xr-x  swift-ime (102760 bytes, 2026-01-18 08:44)
+# -rw-r--r--  swift-ime.swift (8057 bytes, 2026-01-18 08:44)
 
 # Swiftツールの実行
 ~/.local/share/nvim/ime-auto/swift-ime
@@ -282,7 +282,7 @@ end)
 - **バイナリパス**: `~/.local/share/nvim/ime-auto/swift-ime`
 - **ソースパス**: `~/.local/share/nvim/ime-auto/swift-ime.swift`
 - **サイズ**: 102760 bytes (binary), 8057 bytes (source)
-- **最終コンパイル**: 2025-01-18 08:44
+- **最終コンパイル**: 2026-01-18 08:44
 
 ---
 
