@@ -4,12 +4,13 @@ Neovimで日本語入力時のIME（Input Method Editor）を自動的に制御�
 
 ## 特徴
 
-- insertモードでのエスケープシーケンス（デフォルト: `ｋｊ`）でnormalモードへ移行
-- normalモード、visualモード、commandモードでは自動的にIMEをOFF
-- insertモードに入る際、前回のIME状態を自動復元
-- macOS、Windows、Linuxに対応
-- **macOSでは外部ツール不要**：組み込みのSwiftベースIMEツールを使用
-- 高速で信頼性の高いIME切り替え
+- **エスケープシーケンス機能**: insertモードで全角文字列（デフォルト: `ｋｊ`）を入力してnormalモードへスムーズに移行
+- **IME自動切り替え**: normalモード、visualモード、commandモードでは自動的にIMEをOFF
+- **スロットベース状態管理**: InsertモードとNormalモードのIME状態を永続化し、モード切り替え時に自動トグル
+- **クロスプラットフォーム対応**: macOS、Windows、Linuxに対応
+- **macOSでは外部ツール不要**: 組み込みのSwiftベースIMEツールを使用（Carbon API経由）
+- **高速で信頼性の高いIME制御**: キャッシング・デバウンス処理による最適化
+- **セキュア**: Path Traversal攻撃・インジェクション攻撃を防止
 
 ## インストール
 
@@ -87,24 +88,142 @@ require("ime-auto").setup({
 - `:ImeAutoStatus` - 現在の状態を表示
 - `:ImeAutoListInputSources` - 利用可能な入力ソース一覧を表示（macOS専用、参考用）
 
+## アーキテクチャ
+
+### モジュール構成
+
+```
+ime-auto.nvim/
+├── lua/ime-auto/
+│   ├── init.lua              # エントリーポイント・autocmd登録
+│   ├── config.lua            # 設定管理・OS自動検出
+│   ├── ime.lua               # IME制御コアロジック（キャッシング・デバウンス）
+│   ├── escape.lua            # エスケープシーケンス実装（InsertCharPre）
+│   ├── swift-ime-tool.lua    # Swift統合レイヤー（遅延コンパイル）
+│   ├── ui.lua                # UI/ダイアログ（入力ソース選択）
+│   └── utils.lua             # ユーティリティ関数
+├── swift/
+│   └── ime-tool.swift        # macOS IME制御（Carbon API）
+└── plugin/
+    └── ime-auto.lua          # プラグイン初期化
+```
+
+### 依存関係マップ
+
+```
+init.lua (エントリーポイント)
+ ├─ config.lua (設定管理)
+ ├─ ime.lua (IME制御)
+ │   ├─ swift-ime-tool.lua (macOS Swift統合)
+ │   │   └─ swift/ime-tool.swift (Carbon API)
+ │   ├─ PowerShell (Windows)
+ │   └─ fcitx-remote/ibus (Linux)
+ ├─ escape.lua (エスケープシーケンス)
+ ├─ ui.lua (UI/ダイアログ)
+ └─ utils.lua (ユーティリティ)
+```
+
 ## 動作原理
 
-1. **エスケープシーケンス**: insertモードで設定された全角文字列（例：`ｋｊ`）を入力するとnormalモードに移行
-2. **IME制御**: 各OS標準の方法でIMEを制御
-   - macOS: 組み込みのSwiftツール（初回起動時に自動コンパイル）
-   - Windows: PowerShellを使用
-   - Linux: `fcitx-remote`または`ibus`を使用（インストール済みの場合）
-3. **状態管理**: 2つのIME状態（InsertモードとNormalモード）を自動保存し、モード切り替え時にトグル
+### 1. エスケープシーケンス処理
+
+**実装**: `lua/ime-auto/escape.lua`
+
+```
+1. InsertCharPre イベント発火
+   ↓
+2. 入力文字が escape_sequence の1文字目か判定
+   ├─ YES → pending_char に保存、タイマー開始
+   └─ NO → pending_char クリア
+   ↓
+3. 2文字目が入力されたか判定（escape_timeout 内）
+   ├─ YES → バッファから escape_sequence を削除
+   │         IME状態を保存してnormalモードへ移行
+   └─ NO → タイムアウトでリセット
+```
+
+**エッジケース処理**:
+- マルチバイト文字境界: `vim.fn.strchars()` / `vim.fn.strcharpart()` で安全に処理
+- タイムアウト管理: デフォルト200ms、カスタマイズ可能
+- タイマークリーンアップ: `vim.fn.timer_stop()` で確実に停止
+
+### 2. IME自動切り替え
+
+**実装**: `lua/ime-auto/ime.lua`
+
+```
+1. InsertEnter/InsertLeave autocmd 発火
+   ↓
+2. IME制御関数を呼び出し
+   ├─ macOS → swift-ime toggle-from-{insert|normal}
+   ├─ Windows → PowerShell IME制御
+   └─ Linux → fcitx-remote/ibus
+   ↓
+3. 状態をスロットに保存/復元
+```
+
+**パフォーマンス最適化**:
+- **IME状態キャッシュ**: 500ms TTLでsystem call削減
+- **デバウンス処理**: モード変更を100msデバウンス（連続切り替え時の負荷軽減）
+
+### 3. スロットベース状態管理
+
+**実装**: `swift/ime-tool.swift`
+
+**スロット設計**:
+```
+Slot A (~/.local/share/nvim/ime-auto/saved-ime-a.txt)
+  └─ Insert モードのIME状態（例: com.apple.inputmethod.Kotoeri.Japanese）
+
+Slot B (~/.local/share/nvim/ime-auto/saved-ime-b.txt)
+  └─ Normal モードのIME状態（例: com.apple.keylayout.ABC）
+```
+
+**状態遷移フロー**:
+```
+Insert → Normal 遷移:
+  1. 現在のIME IDをSlot Aに保存
+  2. Slot BのIME IDを読み込み
+  3. Slot BのIMEに切り替え（なければABC）
+
+Normal → Insert 遷移:
+  1. 現在のIME IDをSlot Bに保存
+  2. Slot AのIME IDを読み込み
+  3. Slot AのIMEに切り替え
+```
 
 ## macOSの組み込みSwiftツールについて
 
-ime-auto.nvimは、macOSでIME切り替えを行うための専用Swiftツールを内蔵しています：
+ime-auto.nvimは、macOSでIME切り替えを行うための専用Swiftツールを内蔵しています。
 
-- **システムSwiftコンパイラを使用**: macOSの`swiftc`コマンドが必要（通常、Xcode Command Line Toolsに含まれます）
+### 技術仕様
+
+- **API**: macOS Carbon Framework の Text Input Services API
+  - `TISCopyCurrentKeyboardInputSource()` - 現在の入力ソース取得
+  - `TISSelectInputSource()` - 入力ソース切り替え
+- **コンパイル**: システムSwiftコンパイラ（`swiftc`）を使用
 - **初回起動時に自動コンパイル**: `~/.local/share/nvim/ime-auto/swift-ime`に生成
-- **高速で信頼性が高い**: macOSのCarbon APIを直接使用
-- **自動状態管理**: InsertモードとNormalモードのIME状態を2つのスロット（slot A/B）に保存し、モード切り替え時に自動トグル
-- **設定不要**: 使い始めた瞬間から、あなたのIME使用パターンを学習して記憶
+- **遅延コンパイル**: mtimeベースの自動リコンパイル検出
+- **自動状態管理**: 2つのスロット（slot A/B）でInsert/NormalモードのIME状態を永続化
+
+### Swift ツールコマンド
+
+| コマンド | 説明 | 実装 |
+|---------|------|------|
+| （引数なし） | 現在のIME IDを返す | Carbon API |
+| `list` | 利用可能な入力ソース一覧 | TISCreateInputSourceList |
+| `toggle-from-insert` | Insert→Normal切り替え | Slot A/B トグル |
+| `toggle-from-normal` | Normal→Insert切り替え | Slot A/B トグル |
+| `save-insert` | Slot Aに保存 | ファイル書き込み |
+| `save-normal` | Slot Bに保存 | ファイル書き込み |
+
+### セキュリティ対策
+
+- **Path Traversal防止**: スロット名を正規表現 `^[a-zA-Z0-9_-]+$` で検証
+- **インジェクション攻撃防止**: IME ID フォーマット検証 `^[%w%.%-_]+$`
+- **ファイルパーミッション**:
+  - ディレクトリ: 0700（所有者のみアクセス可）
+  - ファイル: 0600（所有者のみ読み書き可）
 
 ### swiftcが見つからない場合
 
@@ -217,6 +336,23 @@ e2e.run_all_tests()
 - E2E-05: エスケープシーケンス（ｋｊ）
 - E2E-06: 高速モード切り替え
 
+## 技術的な詳細
+
+### 設計パターン
+
+1. **遅延初期化**: Swiftツールは初回実行時のみコンパイル
+2. **キャッシング戦略**: IME状態を500ms TTLでキャッシュ
+3. **デバウンス**: モード変更を100msデバウンス
+4. **セキュリティファースト**: 入力検証・パーミッション制限を徹底
+
+### プラットフォーム別IME制御
+
+| OS | 制御方法 | 実装 |
+|----|---------|------|
+| macOS | Carbon API（Swift） | `swift/ime-tool.swift` |
+| Windows | PowerShell | `ime.lua` の `ime_control_windows()` |
+| Linux | fcitx-remote/ibus | `ime.lua` の `ime_control_linux()` |
+
 ## ライセンス
 
 MIT License
@@ -224,3 +360,7 @@ MIT License
 ## 貢献
 
 Issue報告やPull Requestを歓迎します！
+
+## 関連プロジェクト
+
+- [vibing.nvim](https://github.com/shabaraba/vibing.nvim) - Claude AI統合Neovimプラグイン（ime-auto.nvimのE2Eテストに使用）
