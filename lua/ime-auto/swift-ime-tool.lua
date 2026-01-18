@@ -42,49 +42,6 @@ local function trim(str)
   return str:gsub("^%s+", ""):gsub("%s+$", "")
 end
 
--- Get Swift source code path
-local function get_swift_source_path()
-  local source = debug.getinfo(1, "S").source
-  if source:sub(1, 1) == "@" then
-    source = source:sub(2)
-  end
-  local plugin_root = vim.fn.fnamemodify(source, ":h:h:h")
-  return plugin_root .. "/swift/ime-tool.swift"
-end
-
--- Load Swift source code from file
-local function load_swift_source()
-  local swift_path = get_swift_source_path()
-  local file = io.open(swift_path, 'r')
-  if not file then
-    return nil, "Swift source file not found: " .. swift_path
-  end
-  local content = file:read('*a')
-  file:close()
-  return content, nil
-end
-
--- Swift source code for IME control (lazy-loaded)
-local swift_source = nil
-
--- Check if recompilation is needed based on source mtime
-local function needs_recompilation(source_path, binary_path)
-  local source_mtime = vim.fn.getftime(source_path)
-  local binary_mtime = vim.fn.getftime(binary_path)
-
-  -- Binary doesn't exist
-  if binary_mtime == -1 then
-    return true
-  end
-
-  -- Source doesn't exist (shouldn't happen)
-  if source_mtime == -1 then
-    return false
-  end
-
-  -- Source is newer than binary
-  return source_mtime > binary_mtime
-end
 
 -- Get plugin root directory
 local function get_plugin_root()
@@ -107,71 +64,29 @@ local function find_precompiled_binary()
   return nil
 end
 
--- Ensure Swift binary is available (precompiled or user-compiled)
+-- Ensure Swift binary is available
 function M.ensure_compiled()
   if swift_bin_path and vim.fn.filereadable(swift_bin_path) == 1 then
     return true
   end
 
-  -- Priority 1: Check for precompiled binary in plugin bin/
+  -- Check for precompiled binary in plugin bin/
   local precompiled = find_precompiled_binary()
   if precompiled then
     swift_bin_path = precompiled
     return true
   end
 
-  -- Priority 2: Check for user-compiled binary in stdpath('data')
-  local data_dir = vim.fn.stdpath('data')
-  local ime_dir = data_dir .. '/ime-auto'
-  local user_binary = ime_dir .. '/swift-ime'
-  local source_path = ime_dir .. '/swift-ime.swift'
-
-  -- Create directory if it doesn't exist
-  vim.fn.mkdir(ime_dir, 'p')
-
-  -- Check if user-compiled binary exists and is up-to-date
-  if vim.fn.filereadable(user_binary) == 1 then
-    local swift_src_path = get_swift_source_path()
-    if not needs_recompilation(swift_src_path, user_binary) then
-      swift_bin_path = user_binary
-      return true
-    end
-  end
-
-  -- Priority 3: Fallback - compile from source (requires Xcode tools)
-  if not swift_source then
-    local err
-    swift_source, err = load_swift_source()
-    if not swift_source then
-      return false, err .. "\n\nPlease install Xcode Command Line Tools: xcode-select --install"
-    end
-  end
-
-  local file = io.open(source_path, 'w')
-  if not file then
-    return false, "Failed to open Swift source file for writing: " .. source_path
-  end
-
-  local write_ok, write_err = file:write(swift_source)
-  if not write_ok then
-    file:close()
-    return false, "Failed to write Swift source to " .. source_path .. ": " .. tostring(write_err)
-  end
-
-  local close_ok, close_err = file:close()
-  if not close_ok then
-    return false, "Failed to close Swift source file " .. source_path .. ": " .. tostring(close_err)
-  end
-
-  local compile_cmd = string.format('swiftc "%s" -o "%s" 2>&1', source_path, user_binary)
-  local result = vim.fn.system(compile_cmd)
-
-  if vim.v.shell_error ~= 0 then
-    return false, "Failed to compile Swift tool: " .. result .. "\n\nPlease install Xcode Command Line Tools: xcode-select --install"
-  end
-
-  swift_bin_path = user_binary
-  return true
+  -- Binary not found
+  local plugin_root = get_plugin_root()
+  return false, string.format(
+    "Swift IME tool binary not found at: %s/bin/swift-ime\n\n" ..
+    "This is unexpected. Please try:\n" ..
+    "1. Reinstall the plugin\n" ..
+    "2. If you're a developer, run: ./scripts/build-universal-binary.sh\n" ..
+    "3. Report this issue at: https://github.com/shabaraba/ime-auto.nvim/issues",
+    plugin_root
+  )
 end
 
 function M.get_current()
