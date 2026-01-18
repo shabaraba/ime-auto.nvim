@@ -167,6 +167,56 @@ Xcodeまたは Xcode Command Line Tools をインストールしてください�
 xcode-select --install
 ```
 
+## テスト
+
+### 単体テスト（Unit Tests）
+
+Plenary.nvimを使った自動テストを実行：
+
+```bash
+nvim --headless -u tests/minimal_init.lua \
+  -c "PlenaryBustedDirectory tests/priority-1/ { minimal_init = 'tests/minimal_init.lua' }" \
+  -c "qa!"
+```
+
+**テストカバレッジ**:
+- ✅ 基本的なIME切り替え（8テスト）
+- ✅ 高速モード切り替え（6テスト）
+- ✅ マルチバイト文字境界（13テスト）
+
+### E2Eテスト / 動作確認テスト
+
+#### 自動テスト（vibing.nvim推奨）
+
+vibing.nvimを使った自動実行：
+
+```vim
+:source tests/e2e/vibing_execution_script.lua
+```
+
+または、Luaから直接実行：
+
+```lua
+package.path = package.path .. ";" .. vim.fn.getcwd() .. "/?.lua"
+local e2e = require("tests.e2e.vibing_test_runner")
+e2e.run_all_tests()
+```
+
+#### 手動テスト
+
+実際のIME切り替え動作を確認する場合は、以下のドキュメントを参照：
+
+- 📖 **[MANUAL_TEST_GUIDE.md](tests/e2e/MANUAL_TEST_GUIDE.md)** - 詳細なテスト手順
+- 📖 **[VIBING_EXECUTION_GUIDE.md](tests/e2e/VIBING_EXECUTION_GUIDE.md)** - vibing.nvim向け実行ガイド
+
+**主なテストシナリオ**:
+- E2E-01: 基本的なIME切り替え（英語→日本語）
+- E2E-02: スロット永続化（再起動後も保持）
+- E2E-03: 複数バッファでの動作
+- E2E-04: Command modeでの動作
+- E2E-05: エスケープシーケンス（ｋｊ）
+- E2E-06: 高速モード切り替え
+
 ## ライセンス
 
 MIT License
