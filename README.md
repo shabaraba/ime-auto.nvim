@@ -8,8 +8,8 @@ Neovimで日本語入力時のIME（Input Method Editor）を自動的に制御�
 - normalモード、visualモード、commandモードでは自動的にIMEをOFF
 - insertモードに入る際、前回のIME状態を自動復元
 - macOS、Windows、Linuxに対応
-- OS標準機能を使用（外部ツール不要）
-- macOSでは高速な外部CLIツール（macime、macism、im-select）にも対応
+- **macOSでは外部ツール不要**：組み込みのSwiftベースIMEツールを使用
+- 高速で信頼性の高いIME切り替え
 
 ## インストール
 
@@ -26,12 +26,20 @@ Neovimで日本語入力時のIME（Input Method Editor）を自動的に制御�
       escape_timeout = 200,      -- タイムアウト（ミリ秒）
       os = "auto",              -- OS設定: "auto", "macos", "windows", "linux"
       ime_method = "builtin",   -- IME制御方法: "builtin", "custom"
-      macos_ime_tool = nil,     -- macOS: nil (osascript), "macime", "macism", "im-select"
       debug = false,            -- デバッグモード
     })
   end,
 }
 ```
+
+## 初回セットアップ
+
+**設定不要で使えます！**
+
+プラグインをインストールして、普通にNeovimを使うだけでOKです。
+- InsertモードとNormalモードのIME状態を自動的に記憶
+- 次回以降は自動的に復元されます
+- Google日本語入力、ATOK、Kotoeriなど、どの日本語IMEでも自動対応
 
 ## 設定
 
@@ -69,101 +77,6 @@ require("ime-auto").setup({
 })
 ```
 
-### macOS: 外部CLIツールの使用（高速化）
-
-デフォルトの`osascript`は起動に時間がかかるため、より高速な外部CLIツールを使用できます：
-
-#### macimeの使用（推奨：10-60%高速化）
-
-```lua
-require("ime-auto").setup({
-  macos_ime_tool = "macime",
-})
-```
-
-**初回セットアップ**: プラグイン読み込み後、以下のコマンドを実行：
-```vim
-:ImeAutoSetupInputSources
-```
-英語入力ソースを選択するだけでOK（日本語IMEは自動的に保存・復元されます）
-
-**特徴：**
-- Google日本語入力、ATOK、Kotoeriなど、どの日本語IMEでも自動対応
-- 日本語IME IDの設定が不要で、最もシンプル
-
-インストール: [riodelphino/macime](https://github.com/riodelphino/macime)
-
-#### macismの使用（CJKV入力に最適）
-
-macismは、CJKV入力ソースの切り替えが最も確実なツールです：
-
-```lua
-require("ime-auto").setup({
-  macos_ime_tool = "macism",
-})
-```
-
-**初回セットアップ**: プラグイン読み込み後、以下のコマンドを実行：
-```vim
-:ImeAutoSetupInputSources
-```
-対話的に英語と日本語の入力ソースを選択すると、設定が自動保存されます。次回起動時から自動的に読み込まれます。
-
-インストール: [laishulu/macism](https://github.com/laishulu/macism)
-
-#### im-selectの使用
-
-```lua
-require("ime-auto").setup({
-  macos_ime_tool = "im-select",
-})
-```
-
-**初回セットアップ**: プラグイン読み込み後、以下のコマンドを実行：
-```vim
-:ImeAutoSetupInputSources
-```
-対話的に英語と日本語の入力ソースを選択すると、設定が自動保存されます。次回起動時から自動的に読み込まれます。
-
-インストール: [daipeihust/im-select](https://github.com/daipeihust/im-select)
-
-#### 入力ソースIDの確認方法（上級者向け）
-
-通常は`:ImeAutoSetupInputSources`コマンドで自動設定されますが、手動で設定ファイルに記載したい場合は以下の方法で確認できます。
-
-##### 方法1: プラグインのコマンドで確認
-
-```vim
-:ImeAutoListInputSources
-```
-
-##### 方法2: ターミナルで確認
-
-```bash
-# macimeがインストールされている場合
-macime list
-
-# macismがインストールされている場合
-macism
-
-# im-selectがインストールされている場合
-im-select
-```
-
-##### 手動設定例（上級者向け）
-
-`:ImeAutoSetupInputSources`を使わずに手動で設定する場合：
-
-```lua
-require("ime-auto").setup({
-  macos_ime_tool = "macism",  -- または "im-select"
-  macos_input_source_en = "com.apple.keylayout.ABC",
-  macos_input_source_ja = "com.google.inputmethod.Japanese.base",  -- 使用するIMEに合わせて変更
-})
-```
-
-**注意**: 手動設定は`:ImeAutoSetupInputSources`の自動保存設定より優先されます。
-
 ## コマンド
 
 ### 基本コマンド
@@ -172,20 +85,40 @@ require("ime-auto").setup({
 - `:ImeAutoDisable` - IME自動切り替えを無効化
 - `:ImeAutoToggle` - IME自動切り替えのトグル
 - `:ImeAutoStatus` - 現在の状態を表示
-
-### 入力ソース設定コマンド（macOS専用）
-
-- `:ImeAutoSetupInputSources` - 入力ソースをセットアップ（初回のみ必要、設定は自動保存されます）
-- `:ImeAutoListInputSources` - 利用可能な入力ソース一覧を表示（上級者向け）
+- `:ImeAutoListInputSources` - 利用可能な入力ソース一覧を表示（macOS専用、参考用）
 
 ## 動作原理
 
 1. **エスケープシーケンス**: insertモードで設定された全角文字列（例：`ｋｊ`）を入力するとnormalモードに移行
 2. **IME制御**: 各OS標準の方法でIMEを制御
-   - macOS: `osascript`を使用（デフォルト）、または高速な外部CLIツール（macime、macism、im-select）
+   - macOS: 組み込みのSwiftツール（初回起動時に自動コンパイル）
    - Windows: PowerShellを使用
    - Linux: `fcitx-remote`または`ibus`を使用（インストール済みの場合）
-3. **パフォーマンス最適化**: IME切り替え時の遅延を最小化するため、不要な処理をスキップ
+3. **状態管理**: 2つのIME状態（InsertモードとNormalモード）を自動保存し、モード切り替え時にトグル
+
+## macOSの組み込みSwiftツールについて
+
+ime-auto.nvimは、macOSでIME切り替えを行うための専用Swiftツールを内蔵しています：
+
+- **システムSwiftコンパイラを使用**: macOSの`swiftc`コマンドが必要（通常、Xcode Command Line Toolsに含まれます）
+- **初回起動時に自動コンパイル**: `~/.local/share/nvim/ime-auto/swift-ime`に生成
+- **高速で信頼性が高い**: macOSのCarbon APIを直接使用
+- **自動状態管理**: InsertモードとNormalモードのIME状態を2つのスロット（slot A/B）に保存し、モード切り替え時に自動トグル
+- **設定不要**: 使い始めた瞬間から、あなたのIME使用パターンを学習して記憶
+
+### swiftcが見つからない場合
+
+`swiftc`コマンドがシステムにない場合、以下のコマンドでXcode Command Line Toolsをインストールしてください：
+
+```bash
+xcode-select --install
+```
+
+インストール後、以下のコマンドで確認できます：
+
+```bash
+swiftc --version
+```
 
 ## トラブルシューティング
 
@@ -206,8 +139,8 @@ require("ime-auto").setup({
    require("ime-auto").setup({
      ime_method = "custom",
      custom_commands = {
-       on = "im-select com.google.inputmethod.Japanese.base",
-       off = "im-select com.apple.keylayout.ABC",
+       on = "your-custom-ime-on-command",
+       off = "your-custom-ime-off-command",
      },
    })
    ```
@@ -220,17 +153,69 @@ require("ime-auto").setup({
   require("ime-auto").setup({ escape_timeout = 500 })
   ```
 
-### IME切り替えにラグがある（macOS）
+### macOSでSwiftツールのコンパイルに失敗する
 
-より高速な外部CLIツールを使用することで改善できます：
+Swiftコンパイラがインストールされていない可能性があります。以下のコマンドで確認：
 
-```lua
-require("ime-auto").setup({
-  macos_ime_tool = "macime",  -- 推奨：10-60%高速化
-})
+```bash
+swiftc --version
 ```
 
-詳細は「macOS: 外部CLIツールの使用（高速化）」セクションを参照してください。
+Xcodeまたは Xcode Command Line Tools をインストールしてください：
+
+```bash
+xcode-select --install
+```
+
+## テスト
+
+### 単体テスト（Unit Tests）
+
+Plenary.nvimを使った自動テストを実行：
+
+```bash
+nvim --headless -u tests/minimal_init.lua \
+  -c "PlenaryBustedDirectory tests/priority-1/ { minimal_init = 'tests/minimal_init.lua' }" \
+  -c "qa!"
+```
+
+**テストカバレッジ**:
+- ✅ 基本的なIME切り替え（8テスト）
+- ✅ 高速モード切り替え（6テスト）
+- ✅ マルチバイト文字境界（13テスト）
+
+### E2Eテスト / 動作確認テスト
+
+#### 自動テスト（vibing.nvim推奨）
+
+vibing.nvimを使った自動実行：
+
+```vim
+:source tests/e2e/vibing_execution_script.lua
+```
+
+または、Luaから直接実行：
+
+```lua
+package.path = package.path .. ";" .. vim.fn.getcwd() .. "/?.lua"
+local e2e = require("tests.e2e.vibing_test_runner")
+e2e.run_all_tests()
+```
+
+#### 手動テスト
+
+実際のIME切り替え動作を確認する場合は、以下のドキュメントを参照：
+
+- 📖 **[MANUAL_TEST_GUIDE.md](tests/e2e/MANUAL_TEST_GUIDE.md)** - 詳細なテスト手順
+- 📖 **[VIBING_EXECUTION_GUIDE.md](tests/e2e/VIBING_EXECUTION_GUIDE.md)** - vibing.nvim向け実行ガイド
+
+**主なテストシナリオ**:
+- E2E-01: 基本的なIME切り替え（英語→日本語）
+- E2E-02: スロット永続化（再起動後も保持）
+- E2E-03: 複数バッファでの動作
+- E2E-04: Command modeでの動作
+- E2E-05: エスケープシーケンス（ｋｊ）
+- E2E-06: 高速モード切り替え
 
 ## ライセンス
 
