@@ -40,8 +40,7 @@ Neovimで日本語入力時のIME（Input Method Editor）を自動的に制御�
 **設定不要で使えます！**
 
 インストール後、普通にNeovimを使うだけでOKです。
-- InsertモードとNormalモードのIME状態を自動的に記憶
-- 次回以降は自動的に復元されます
+- InsertモードとNormalモードのIME状態を自動的に記憶、復元されます
 - Google日本語入力、ATOK、Kotoeriなど、どの日本語IMEでも自動対応
 
 ### コマンド
@@ -76,7 +75,8 @@ swiftc --version
 
 ### エスケープシーケンスが動作しない
 
-- 全角文字で入力していることを確認してください（`ｋｊ`は全角、`kj`は半角）
+- 全角文字で入力していることを確認してください
+- 入力確定が必要なので、エンター押下が必要です
 
 ### macOSでコンパイルエラーが出る
 
@@ -96,32 +96,14 @@ require("ime-auto").setup({ debug = true })
 
 `:messages` でログを確認できます。
 
-## 開発者向け
+## 貢献
 
-### テスト実行
+Issue報告やPull Requestを歓迎します！
 
-**単体テスト**:
-```bash
-nvim --headless -u tests/minimal_init.lua \
-  -c "PlenaryBustedDirectory tests/priority-1/ { minimal_init = 'tests/minimal_init.lua' }" \
-  -c "qa!"
-```
-
-**E2Eテスト**:
-```vim
-:source tests/e2e/vibing_execution_script.lua
-```
-
-詳細は以下を参照：
-- 📖 [MANUAL_TEST_GUIDE.md](tests/e2e/MANUAL_TEST_GUIDE.md) - 手動テスト手順
+開発に関する詳細は以下を参照してください：
+- 📖 [CONTRIBUTING.md](CONTRIBUTING.md) - 貢献ガイド（テスト実行方法など）
 - 📖 [CLAUDE.md](CLAUDE.md) - 開発ガイド（アーキテクチャ、実装詳細、Claude Code での開発方法）
 
 ## ライセンス
 
 MIT License
-
-## 貢献
-
-Issue報告やPull Requestを歓迎します！
-
-開発に関する詳細は [CLAUDE.md](CLAUDE.md) を参照してください。
