@@ -97,7 +97,9 @@ end
 
 function M.enable()
   enabled = true
-  if M.utils.is_normal_mode() then
+  -- Only turn off IME on enable if not using slot-based management
+  local config = M.config.get()
+  if M.utils.is_normal_mode() and config.os ~= "macos" then
     M.ime.off()
   end
   M.utils.notify("Enabled", vim.log.levels.INFO)

@@ -182,8 +182,10 @@ end
 function M.restore_state()
   local config = require("ime-auto.config").get()
 
+  -- macOS: Use slot-based management to restore Insert mode IME state
   if config.os == "macos" then
-    M.on()
+    local swift_tool = require("ime-auto.swift-ime-tool")
+    swift_tool.toggle_from_normal()
     return
   end
 
