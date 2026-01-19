@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/shabaraba/ime-auto.nvim/compare/v0.1.1...v0.1.2) (2026-01-18)
+
+
+### Features
+
+* Add precompiled Universal Binary and improve developer workflow ([#9](https://github.com/shabaraba/ime-auto.nvim/issues/9)) ([5828a00](https://github.com/shabaraba/ime-auto.nvim/commit/5828a00040687d1adbb760f35826447d5ced022d))
+
 ## [0.1.1](https://github.com/shabaraba/ime-auto.nvim/compare/v0.1.0...v0.1.1) (2026-01-18)
 
 
