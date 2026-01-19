@@ -7,7 +7,7 @@
 - 実際の入力: 英字しか入力できない
 - 発生タイミング: 数回のInsert/Normalモード切り替え後
 
-**USキーボード環境では問題なし**
+## USキーボード環境では問題なし
 
 ## 根本原因
 
@@ -18,7 +18,7 @@
    - しかし、その中の**入力モード**（ひらがな/英数）は制御できない
 
 2. **入力モードとInput Source IDは別物**
-   ```
+   ```text
    Input Source ID: com.google.inputmethod.Japanese.base
    ├─ 入力モード: ひらがな  ← これを制御する方法がない
    └─ 入力モード: 英数      ← これを制御する方法がない
@@ -36,7 +36,19 @@
 ```swift
 func isJISKeyboard() -> Bool {
     let keyboardType = LMGetKbdType()
-    return keyboardType == 40 || keyboardType == 41
+
+    // Known JIS keyboard types
+    if keyboardType == 40 || keyboardType == 41 {
+        return true
+    }
+
+    // Known US keyboard types
+    if keyboardType == 42 || keyboardType == 43 {
+        return false
+    }
+
+    // Unknown types (e.g., Apple Silicon type 93) are treated as JIS
+    return true
 }
 ```
 
@@ -78,7 +90,7 @@ func sendEisuKey() {
 
 ### JISキーボードの場合
 
-```
+```text
 1. Input Source IDを切り替え（例: ABC → Japanese）
 2. 50ms待機
 3. 切り替え成功を検証（最大3回リトライ）
@@ -88,7 +100,7 @@ func sendEisuKey() {
 
 ### USキーボードの場合
 
-```
+```text
 1. Input Source IDを切り替え（例: ABC → Japanese）
 2. 50ms待機
 3. 切り替え成功を検証（最大3回リトライ）
@@ -116,13 +128,13 @@ cat ~/.local/share/nvim/ime-auto/debug.log
 ### 期待されるログ出力
 
 **JISキーボード**:
-```
+```text
 [switchToInputSource] JIS keyboard detected - Sending Kana key to force Hiragana mode
 [switchToInputSource] JIS keyboard detected - Sending Eisu key to force English mode
 ```
 
 **USキーボード**:
-```
+```text
 [switchToInputSource] Non-JIS keyboard detected - Skipping key event (not needed)
 ```
 
