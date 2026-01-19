@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/shabaraba/ime-auto.nvim/compare/v0.1.2...v0.1.3) (2026-01-19)
+
+
+### Bug Fixes
+
+* Resolve input mode mismatch on JIS keyboards (macOS) ([#11](https://github.com/shabaraba/ime-auto.nvim/issues/11)) ([c2070d6](https://github.com/shabaraba/ime-auto.nvim/commit/c2070d67a2207ebf9b32c5c0e291e0132454de50))
+
 ## [0.1.2](https://github.com/shabaraba/ime-auto.nvim/compare/v0.1.1...v0.1.2) (2026-01-18)
 
 
