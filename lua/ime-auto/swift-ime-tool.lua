@@ -15,11 +15,15 @@ local function run_swift_command(args)
     return nil, false
   end
 
+  -- Enable debug logging if ime-auto debug is enabled
+  local config = require("ime-auto.config").get()
+  local env_prefix = config.debug and "IME_AUTO_DEBUG=1 " or ""
+
   local cmd
   if args then
-    cmd = string.format('%s %s', vim.fn.shellescape(swift_bin_path), vim.fn.shellescape(args))
+    cmd = string.format('%s%s %s', env_prefix, vim.fn.shellescape(swift_bin_path), vim.fn.shellescape(args))
   else
-    cmd = vim.fn.shellescape(swift_bin_path)
+    cmd = string.format('%s%s', env_prefix, vim.fn.shellescape(swift_bin_path))
   end
   local result = vim.fn.system(cmd)
   local success = vim.v.shell_error == 0

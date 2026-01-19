@@ -159,6 +159,58 @@ nvim --headless -u tests/minimal_init.lua \
 - mtime ベースで自動リコンパイル判定
 - エラー時は詳細なメッセージを表示
 
+**IME切り替えの同期処理（v1.x.x以降）**:
+Carbon APIの`TISSelectInputSource()`は非同期のため、以下の対策を実装:
+
+```swift
+// switchToInputSource() の実装
+TISSelectInputSource(source)
+
+// 1. 初回待機（50ms）
+usleep(50000)
+
+// 2. 切り替え完了を検証
+if getCurrentInputSourceID() == targetID {
+    return true  // 成功
+}
+
+// 3. リトライ（最大3回、各50ms）
+for _ in 0..<3 {
+    usleep(50000)
+    if getCurrentInputSourceID() == targetID {
+        return true
+    }
+}
+
+// 4. 失敗時は警告を出力
+fputs("Warning: IME switch incomplete...", stderr)
+return false
+```
+
+**入力モード強制（JISキーボード専用、v1.x.x以降）**:
+Carbon APIは**Input Source ID**（例: `com.google.inputmethod.Japanese.base`）を切り替えるが、
+その中の**入力モード**（ひらがな/英数）は切り替えられない。この問題に対処するため：
+
+```swift
+// JISキーボードでのみ実行
+if isJISKeyboard() {
+    if isJapaneseIME(targetID) {
+        sendKanaKey()  // かなキー（0x68）を送信してひらがなモードに
+    } else if isEnglishIME(targetID) {
+        sendEisuKey()  // 英数キー（0x66）を送信して英数モードに
+    }
+}
+```
+
+**キーボードタイプ別の動作**:
+- **JISキーボード** (type 40, 41): Input Source切り替え + 入力モード強制
+- **USキーボード** (type 42, 43, その他): Input Source切り替えのみ（入力モード強制は不要）
+
+**パフォーマンス**:
+- 通常ケース: 50ms（1回の待機で完了）
+- 最悪ケース: 200ms（3回リトライ後に完了）
+- JISキーボード: +30ms（キーイベント送信）
+- 体感への影響: ほぼなし（人間の反応時間は200ms以上）
 ## 開発ワークフロー
 
 ### 新機能開発時
@@ -246,6 +298,18 @@ swiftc --version
 2. カスタムコマンドを使用
 3. デバッグモードで動作を確認
 
+**問題**: IME 状態が不一致（メニューバーは日本語だが英字しか打てない）
+**原因**: Carbon APIの制限により、Input Source IDは切り替わるが、その中の入力モード（ひらがな/英数）が切り替わらない
+**解決済み**: v1.x.x 以降、以下の対策を実装済み
+1. Swift側で50msの待機とリトライロジック（最大3回） - Input Source ID切り替えの完了を保証
+2. JISキーボード検出により、必要な場合のみ入力モードを強制切り替え
+   - JISキーボード: `英数`/`かな`キーを送信して入力モードを強制
+   - USキーボード: 入力モード強制は不要（自動的に正しいモードになる）
+3. 切り替え失敗時は警告を stderr に出力
+**対処法**:
+- 最新版（v1.x.x以降）では自動で解決されます
+- JISキーボードの場合のみキーイベント送信により入力モードを強制
+- 問題が続く場合は、デバッグログ（`~/.local/share/nvim/ime-auto/debug.log`）を確認してください
 **問題**: エスケープシーケンスが動作しない
 **解決**:
 1. 全角文字で入力していることを確認
