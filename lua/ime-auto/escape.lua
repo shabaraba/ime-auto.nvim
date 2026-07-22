@@ -1,7 +1,9 @@
 local M = {}
 
-local pending_char = nil
-local pending_pos = nil
+M.enabled = true
+
+local matched_count = 0
+local match_start_pos = nil
 local timer = nil
 
 local function clear_pending()
@@ -9,25 +11,18 @@ local function clear_pending()
     vim.fn.timer_stop(timer)
     timer = nil
   end
-  pending_char = nil
-  pending_pos = nil
-end
-
-local function expected_pos_after_pending()
-  if not pending_char or not pending_pos then
-    return nil
-  end
-  return { pending_pos[1], pending_pos[2] + vim.fn.strlen(pending_char) }
+  matched_count = 0
+  match_start_pos = nil
 end
 
 local function is_at_expected_pos()
-  local expected = expected_pos_after_pending()
-  if not expected then
+  if not match_start_pos then
     return false
   end
-
+  local config = require("ime-auto.config").get()
+  local matched_bytes = vim.fn.strlen(vim.fn.strcharpart(config.escape_sequence, 0, matched_count))
   local cursor = vim.api.nvim_win_get_cursor(0)
-  return cursor[1] == expected[1] and cursor[2] == expected[2]
+  return cursor[1] == match_start_pos[1] and cursor[2] == match_start_pos[2] + matched_bytes
 end
 
 local function handle_escape_sequence()
@@ -37,7 +32,8 @@ local function handle_escape_sequence()
   clear_pending()
 
   local line = vim.api.nvim_get_current_line()
-  local col = vim.api.nvim_win_get_cursor(0)[2]
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local row, col = cursor[1], cursor[2]
 
   local escape_seq = config.escape_sequence
   local seq_len = vim.fn.strchars(escape_seq)
@@ -47,8 +43,10 @@ local function handle_escape_sequence()
     local last_chars = vim.fn.strcharpart(before_cursor, vim.fn.strchars(before_cursor) - seq_len)
 
     if last_chars == escape_seq then
-      local new_line = vim.fn.strpart(line, 0, col - vim.fn.strlen(escape_seq)) .. vim.fn.strpart(line, col)
+      local new_col = col - vim.fn.strlen(escape_seq)
+      local new_line = vim.fn.strpart(line, 0, new_col) .. vim.fn.strpart(line, col)
       vim.api.nvim_set_current_line(new_line)
+      vim.api.nvim_win_set_cursor(0, { row, new_col })
 
       ime.save_state()
 
@@ -65,42 +63,62 @@ local function handle_escape_sequence()
   return false
 end
 
-function M.on_cursor_moved_i()
-  if not pending_char then
+local function advance_match(count, seq_len, escape_timeout)
+  if timer then
+    vim.fn.timer_stop(timer)
+    timer = nil
+  end
+
+  if count >= seq_len then
+    matched_count = 0
+    match_start_pos = nil
+    vim.schedule(function()
+      handle_escape_sequence()
+    end)
     return
   end
 
-  if not is_at_expected_pos() then
+  if count == 1 then
+    local cursor = vim.api.nvim_win_get_cursor(0)
+    match_start_pos = { cursor[1], cursor[2] }
+  end
+
+  matched_count = count
+  timer = vim.fn.timer_start(escape_timeout, clear_pending)
+end
+
+function M.on_cursor_moved_i()
+  if matched_count > 0 and not is_at_expected_pos() then
     clear_pending()
   end
 end
 
 function M.on_insert_char_pre()
+  if not M.enabled then
+    return
+  end
+
   local char = vim.v.char
-  local config = require("ime-auto.config").get()
 
   if not char or char == "" then
     return
   end
 
+  local config = require("ime-auto.config").get()
   local escape_seq = config.escape_sequence
+  local seq_len = vim.fn.strchars(escape_seq)
+
+  if seq_len == 0 then
+    return
+  end
+
+  local expected_char = vim.fn.strcharpart(escape_seq, matched_count, 1)
   local first_char = vim.fn.strcharpart(escape_seq, 0, 1)
-  local second_char = vim.fn.strcharpart(escape_seq, 1, 1)
 
-  if pending_char == first_char and char == second_char and is_at_expected_pos() then
-    clear_pending()
-
-    vim.schedule(function()
-      handle_escape_sequence()
-    end)
+  if char == expected_char and (matched_count == 0 or is_at_expected_pos()) then
+    advance_match(matched_count + 1, seq_len, config.escape_timeout)
   elseif char == first_char then
-    clear_pending()
-
-    pending_char = char
-    pending_pos = vim.api.nvim_win_get_cursor(0)
-    timer = vim.fn.timer_start(config.escape_timeout, function()
-      clear_pending()
-    end)
+    advance_match(1, seq_len, config.escape_timeout)
   else
     clear_pending()
   end
