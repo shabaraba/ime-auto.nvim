@@ -6,6 +6,49 @@ local utils = require("ime-auto.utils")
 
 local swift_bin_path = nil
 
+-- Sanitize a raw identifier to the character set accepted by the Swift tool
+-- (alphanumeric, dot, dash, underscore). Exposed for testability; pure
+-- function with no side effects.
+function M.sanitize_instance_id(raw)
+  local id = (raw or ""):gsub("[^%w%.%-_]", "_")
+  if id == "" then
+    id = tostring(vim.fn.getpid())
+  end
+  return id
+end
+
+-- Unique identifier for this Neovim instance, used to isolate slot files
+-- between concurrently running instances (see issue #31)
+local function get_instance_id()
+  local raw = vim.v.servername
+  if not raw or raw == "" then
+    raw = tostring(vim.fn.getpid())
+  end
+  return M.sanitize_instance_id(raw)
+end
+
+-- Enable debug logging if ime-auto debug is enabled
+local function build_env()
+  local config = require("ime-auto.config").get()
+  if config.debug then
+    return { IME_AUTO_DEBUG = "1" }
+  end
+  return nil
+end
+
+-- args: nil, or a list of positional arguments passed to the Swift binary
+local function build_argv(args)
+  local argv = { swift_bin_path }
+  if args then
+    for _, arg in ipairs(args) do
+      table.insert(argv, arg)
+    end
+  end
+  return argv
+end
+
+-- Synchronous invocation for callers that need the result immediately
+-- (e.g. user-triggered commands like :Status, :ListInputSources)
 local function run_swift_command(args)
   local ok, err = M.ensure_compiled()
   if not ok then
@@ -15,22 +58,33 @@ local function run_swift_command(args)
     return nil, false
   end
 
-  -- Enable debug logging if ime-auto debug is enabled
-  local config = require("ime-auto.config").get()
-  local env_prefix = config.debug and "IME_AUTO_DEBUG=1 " or ""
-
-  local cmd
-  if args then
-    cmd = string.format('%s%s %s', env_prefix, vim.fn.shellescape(swift_bin_path), vim.fn.shellescape(args))
-  else
-    cmd = string.format('%s%s', env_prefix, vim.fn.shellescape(swift_bin_path))
-  end
-  local result = vim.fn.system(cmd)
-  local success = vim.v.shell_error == 0
-  return result, success
+  local result = vim.system(build_argv(args), { text = true, env = build_env() }):wait()
+  return result.stdout, result.code == 0
 end
 
+-- Asynchronous invocation for hot-path callers (InsertEnter/InsertLeave) that
+-- must not block the main loop while the Swift binary switches IME state
+local function run_swift_command_async(args, callback)
+  local ok, err = M.ensure_compiled()
+  if not ok then
+    if err then
+      vim.notify("[ime-auto] " .. err, vim.log.levels.ERROR)
+    end
+    if callback then
+      callback(nil, false)
+    end
+    return
+  end
 
+  vim.system(build_argv(args), { text = true, env = build_env() }, function(result)
+    if not callback then
+      return
+    end
+    vim.schedule(function()
+      callback(result.stdout, result.code == 0)
+    end)
+  end)
+end
 
 -- Get plugin root directory
 local function get_plugin_root()
@@ -86,24 +140,26 @@ function M.get_current()
   return nil
 end
 
-function M.switch_to(source_id)
-  -- Validate input source ID format to prevent injection
-  if not source_id or type(source_id) ~= "string" then
-    return false
+-- Returns true if IME is composing (non-ASCII), false if ASCII/English mode,
+-- or nil if the status could not be determined. Trusts the Swift tool's
+-- TIS-property-based judgment rather than re-deriving it from the ID string.
+function M.get_status()
+  local result, success = run_swift_command({ "status" })
+  if not success or not result then
+    return nil
   end
 
-  -- Input source IDs should only contain alphanumeric, dots, hyphens, and underscores
-  if not source_id:match("^[%w%.%-_]+$") then
-    vim.notify("[ime-auto] Invalid input source ID format: " .. source_id, vim.log.levels.ERROR)
+  local trimmed = utils.trim(result)
+  if trimmed == "on" then
+    return true
+  elseif trimmed == "off" then
     return false
   end
-
-  local _, success = run_swift_command(source_id)
-  return success
+  return nil
 end
 
 function M.list()
-  local result, success = run_swift_command("list")
+  local result, success = run_swift_command({ "list" })
   if not success or not result then
     return nil
   end
@@ -117,29 +173,24 @@ function M.list()
   return sources
 end
 
-function M.toggle()
-  local _, success = run_swift_command("toggle")
-  return success
+-- Fire-and-forget: the InsertLeave path doesn't need to wait for the result,
+-- so switching happens asynchronously to avoid blocking the editor.
+function M.toggle_from_insert(callback)
+  run_swift_command_async({ "toggle-from-insert", get_instance_id() }, function(_, success)
+    if callback then
+      callback(success)
+    end
+  end)
 end
 
-function M.save_insert_ime()
-  local _, success = run_swift_command("save-insert")
-  return success
-end
-
-function M.save_normal_ime()
-  local _, success = run_swift_command("save-normal")
-  return success
-end
-
-function M.toggle_from_insert()
-  local _, success = run_swift_command("toggle-from-insert")
-  return success
-end
-
-function M.toggle_from_normal()
-  local _, success = run_swift_command("toggle-from-normal")
-  return success
+-- Fire-and-forget: the InsertEnter path doesn't need to wait for the result,
+-- so switching happens asynchronously to avoid blocking the editor.
+function M.toggle_from_normal(callback)
+  run_swift_command_async({ "toggle-from-normal", get_instance_id() }, function(_, success)
+    if callback then
+      callback(success)
+    end
+  end)
 end
 
 return M

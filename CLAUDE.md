@@ -23,10 +23,10 @@ ime-auto.nvim/
 ├── lua/ime-auto/
 │   ├── init.lua              # エントリーポイント・autocmd登録
 │   ├── config.lua            # 設定管理・OS自動検出
-│   ├── ime.lua               # IME制御コアロジック（キャッシング・デバウンス）
+│   ├── ime.lua               # IME制御コアロジック（キャッシング・非同期実行・状態管理）
+│   ├── ime-platform.lua      # OS別IME制御コマンド実行（macOS/Windows/Linux）
 │   ├── escape.lua            # エスケープシーケンス実装（InsertCharPre）
-│   ├── swift-ime-tool.lua    # Swift統合レイヤー（遅延コンパイル）
-│   ├── ui.lua                # UI/ダイアログ（入力ソース選択）
+│   ├── swift-ime-tool.lua    # Swift統合レイヤー（プリコンパイル済みバイナリ利用）
 │   └── utils.lua             # ユーティリティ関数
 ├── swift/
 │   └── ime-tool.swift        # macOS IME制御（Carbon API）
@@ -42,13 +42,13 @@ ime-auto.nvim/
 ```
 init.lua (エントリーポイント)
  ├─ config.lua (設定管理)
- ├─ ime.lua (IME制御)
- │   ├─ swift-ime-tool.lua (macOS Swift統合)
- │   │   └─ swift/ime-tool.swift (Carbon API)
- │   ├─ PowerShell (Windows)
- │   └─ fcitx-remote/ibus (Linux)
+ ├─ ime.lua (IME制御・状態管理)
+ │   └─ ime-platform.lua (OS別コマンド実行)
+ │       ├─ swift-ime-tool.lua (macOS Swift統合)
+ │       │   └─ swift/ime-tool.swift (Carbon API)
+ │       ├─ PowerShell (Windows)
+ │       └─ fcitx-remote/ibus (Linux)
  ├─ escape.lua (エスケープシーケンス)
- ├─ ui.lua (UI/ダイアログ)
  └─ utils.lua (ユーティリティ)
 ```
 
@@ -57,7 +57,9 @@ init.lua (エントリーポイント)
 ### コーディング規約
 
 1. **ファイルサイズ**: 1ファイル100行程度を目標（最大200行）
+   - 例外: `swift/ime-tool.swift` はCLI引数ごとのコマンド分岐（`list`/`toggle-from-insert`/`toggle-from-normal`/`toggle`/`save-insert`/`save-normal`）とCarbon APIによる同期待機・リトライ・JISキーボード対応ロジックが密接に絡み合っており、無理に分割するとCarbon API呼び出しの順序保証（`TISSelectInputSource`の非同期待機→検証→リトライ→入力モード強制）が追いにくくなるため、単一ファイルのまま保守する
 2. **モジュール分割**: 単一責任の原則に従う
+   - 例: `ime.lua`（IME状態のキャッシュ・デバウンス・保存/復元ロジック）と `ime-platform.lua`（macOS/Windows/LinuxごとのIME切り替えコマンド実行）は責務ごとに分離している
 3. **コメント**: 不要なコメントは残さない（コードは自己文書化）
 4. **命名規則**:
    - 変数・関数: `snake_case`
@@ -83,8 +85,8 @@ nvim --headless -u tests/minimal_init.lua \
 ### パフォーマンス要件
 
 1. **キャッシング**: 頻繁に呼ばれる関数は結果をキャッシュ（TTL: 500ms）
-2. **デバウンス**: 連続するイベントは100msデバウンス
-3. **遅延初期化**: コンパイル・読み込みは初回実行時のみ
+2. **非同期実行**: InsertEnter/InsertLeave での IME 切り替えは `vim.system()` による非同期呼び出しでメインループをブロックしない
+3. **遅延初期化**: プリコンパイル済みバイナリ（`bin/swift-ime`）のパス解決は初回実行時のみ行いキャッシュする
 
 ### セキュリティ要件
 
@@ -116,16 +118,18 @@ nvim --headless -u tests/minimal_init.lua \
 
 ### 2. IME 自動切り替え
 
-**ファイル**: `lua/ime-auto/ime.lua`
+**ファイル**: `lua/ime-auto/ime.lua`（状態管理）、`lua/ime-auto/ime-platform.lua`（OS別コマンド実行）
 
 **最適化**:
-- **IME状態キャッシュ**: `cached_ime_state` テーブル（TTL: 500ms）
-- **デバウンス**: `debounce_timer` で100msデバウンス
+- **IME状態キャッシュ**: `ime_state_cache` テーブル（TTL: 500ms）
+- **非同期IME切り替え**: `swift-ime-tool.lua` が `vim.system()` を使い、InsertEnter/InsertLeave の Swift バイナリ呼び出しをメインループ非ブロッキングで実行
 
-**プラットフォーム別実装**:
-- macOS: `swift-ime-tool.lua` 経由で Swift ツール呼び出し
-- Windows: PowerShell スクリプト実行
-- Linux: `fcitx-remote` または `ibus` コマンド実行
+**プラットフォーム別実装**（`ime-platform.lua`）:
+- macOS: `M.macos()` から `swift-ime-tool.lua` 経由で Swift ツール呼び出し
+- Windows: `M.windows()` から `windows-ime-tool.lua` 経由で PowerShell スクリプト実行
+- Linux: `M.linux()` から `linux-ime-tool.lua` 経由で `fcitx-remote` または `ibus` コマンド実行
+
+**Windows実装の詳細**: `windows-ime-tool.lua` と `powershell/ime-tool.ps1` を参照（Slot A/B方式、macOSと同様の設計）。
 
 ### 3. スロットベース状態管理
 
@@ -134,30 +138,34 @@ nvim --headless -u tests/minimal_init.lua \
 **スロット設計**:
 - Slot A: Insert モードの IME 状態
 - Slot B: Normal モードの IME 状態
-- ストレージ: `~/.local/share/nvim/ime-auto/saved-ime-{a|b}.txt`
+- ストレージ: `~/.local/share/nvim/ime-auto/saved-ime-{a|b}-<instance_id>.txt`
+  - `<instance_id>` は Lua側（`swift-ime-tool.lua`）が `v:servername`（空の場合は `getpid()`）から生成し、
+    ファイル名に安全な文字（英数字・`.`・`-`・`_`）のみに正規化した上でSwiftツールに引数として渡す
+  - これにより複数のNeovimインスタンスを同時起動してもスロットファイルが競合しない（issue #31）
 
 **主要関数**:
 - `toggle_from_insert()`: Insert → Normal 遷移時
 - `toggle_from_normal()`: Normal → Insert 遷移時
-- `writeToSlot()`: スロットに IME ID を保存
-- `readFromSlot()`: スロットから IME ID を読み込み
+- `writeToSlot()`: スロットに IME ID を保存（`instanceID` 引数でファイルを分離）
+- `readFromSlot()`: スロットから IME ID を読み込み（`instanceID` 引数でファイルを分離）
 
 ### 4. Swift ツール統合
 
 **ファイル**: `lua/ime-auto/swift-ime-tool.lua`
 
-**コンパイルフロー**:
+**バイナリ解決フロー（プリコンパイル済みUniversal Binary、v0.1.x以降）**:
 ```
 1. ensure_compiled() 呼び出し
-2. バイナリ存在チェック → mtime 比較
-3. Swift ソース読み込み → コピー
-4. swiftc コンパイル実行
+2. 既に解決済みパスが存在しファイル読み取り可能なら即 true を返す
+3. プラグインルート配下の bin/swift-ime（事前ビルド済みUniversal Binary）を探索
+   → 見つかれば swift_bin_path にキャッシュして true を返す
+4. 見つからない場合は false とエラーメッセージ（再インストール手順・
+   ./scripts/build-universal-binary.sh の案内・issue報告先）を返す
 ```
 
-**遅延コンパイル**:
-- 初回実行時のみコンパイル
-- mtime ベースで自動リコンパイル判定
-- エラー時は詳細なメッセージを表示
+**注意**: 現行実装は `swiftc` を一切呼び出さない。Swift ツールはリリース時に
+`scripts/build-universal-binary.sh` で事前ビルドされ `bin/swift-ime` としてプラグインに
+同梱される。実行時はこのバイナリの存在確認のみを行う（旧来のmtimeベース遅延コンパイル方式は廃止済み）。
 
 **IME切り替えの同期処理（v1.x.x以降）**:
 Carbon APIの`TISSelectInputSource()`は非同期のため、以下の対策を実装:
@@ -182,8 +190,8 @@ for _ in 0..<3 {
     }
 }
 
-// 4. 失敗時は警告を出力
-fputs("Warning: IME switch incomplete...", stderr)
+// 4. 失敗時は詳細ログを出力（debugLog経由でstderr、IME_AUTO_DEBUG=1時はログファイルにも出力）
+debugLog("[switchToInputSource] FAILED after all retries (target: \(targetID), current: \(currentID))")
 return false
 ```
 
@@ -193,25 +201,73 @@ Carbon APIは**Input Source ID**（例: `com.google.inputmethod.Japanese.base`�
 
 ```swift
 // JISキーボードでのみ実行
+// isASCIICapable() は kTISPropertyInputSourceIsASCIICapable を参照する
+// （IDの部分文字列マッチではなく、TISの正式プロパティで判定）
 if isJISKeyboard() {
-    if isJapaneseIME(targetID) {
-        sendKanaKey()  // かなキー（0x68）を送信してひらがなモードに
-    } else if isEnglishIME(targetID) {
+    if isASCIICapable(source) {
         sendEisuKey()  // 英数キー（0x66）を送信して英数モードに
+    } else {
+        sendKanaKey()  // かなキー（0x68）を送信してひらがなモードに
     }
 }
 ```
+
+**IMEステータス判定（`:ImeAutoStatus` 等、v1.x.x以降）**:
+Lua側 (`ime.lua`) はID文字列のマッチングでIME状態を再判定せず、Swiftツールの `status` コマンドが返す
+`on`/`off`（`isCurrentSourceASCIICapable()` によるTISプロパティベースの判定結果）をそのまま信頼する。
 
 **キーボードタイプ別の動作**:
 - **JISキーボード** (type 40, 41): Input Source切り替え + 入力モード強制
 - **USキーボード** (type 42, 43, その他): Input Source切り替えのみ（入力モード強制は不要）
 
+**アクセシビリティ権限（macOS必須）**:
+`sendKanaKey()`/`sendEisuKey()` が送信する `CGEvent` は、Neovim（またはターミナルアプリ）に
+アクセシビリティ権限が付与されていないと OS に黙って破棄される。Input Source ID の切り替え自体は
+成功するため、権限がない環境では失敗が握りつぶされ「メニューバーは日本語なのに英字しか打てない」
+問題が再発する。この問題を検知できるよう、キー送信前に `AXIsProcessTrusted()` を確認し、
+権限がない場合はキー送信をスキップして stderr（および `debug.log`）に警告を出力する：
+
+```swift
+func checkAccessibilityPermission() -> Bool {
+    let trusted = AXIsProcessTrusted()
+    if !trusted {
+        debugLog("Warning: Accessibility permission not granted. ...")
+    }
+    return trusted
+}
+```
+
+権限は システム設定 > プライバシーとセキュリティ > アクセシビリティ で
+Neovim/ターミナルアプリを許可することで付与できる。
+
 **パフォーマンス**:
 - 通常ケース: 50ms（1回の待機で完了）
-- 最悪ケース: 200ms（3回リトライ後に完了）
-- JISキーボード: +30ms（キーイベント送信）
+- 最悪ケース: 200ms（初回50ms + リトライ3回×50ms）
+- JISキーボード: +60ms（`sendKanaKey`/`sendEisuKey` は各 `usleep(10000)`（キー押下後10ms）+ `usleep(50000)`（キー解放後50ms、入力モード安定待ち）で構成）
 - 体感への影響: ほぼなし（人間の反応時間は200ms以上）
-## 開発ワークフロー
+
+### 5. モード別 TISInputSource ID 直接選択の調査（Issue #36・設計判断記録）
+
+**背景**: 現行実装（Input Source 切替＋JISキーボード判定＋かな/英数キー合成送信＋アクセシビリティ権限）は特殊対応の積み重ねである。多くの日本語IMEはモードごとに個別の `TISInputSource` ID（例: `com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese` vs `...Roman`）を公開しているため、それを `TISSelectInputSource` で直接選択できればキー送信・キーボード判定・権限依存を排除できるのではないか、という仮説を検証した。
+
+**調査方法**: 開発機（Apple Silicon Mac / macOS 26 / Swift 6.2）上で `swift-ime list`（`TISCreateInputSourceList(nil, false/true)`）を実行し、実際にインストールされている日本語IME（Kotoeri、Google日本語入力、azooKey）のモード別IDを列挙。その上で、各モード別IDに対して直接 `TISSelectInputSource` を呼び、`TISCopyCurrentKeyboardInputSource` で実際に切り替わるかを検証するPoCツールを作成し実行した。検証後は変更したシステムの入力ソース有効化状態を元に戻した。
+
+**検証結果**:
+
+| IME | モード別ID | 列挙可否 (`includeAllInstalled: true`) | `TISSelectInputSource` の結果 |
+|---|---|---|---|
+| Kotoeri（Apple標準・ローマ字入力） | `...Kotoeri.RomajiTyping.Japanese` / `...Roman` | 列挙可 | 親メソッド（`...RomajiTyping`）を `TISEnableInputSource` で有効化した状態でのみ **成功（OSStatus 0）**。切替後 `TISCopyCurrentKeyboardInputSource` は要求したモード別IDを正しく返した |
+| Google日本語入力 | `com.google.inputmethod.Japanese.Roman` / `.Katakana` / `.HalfWidthKana` / `.FullWidthRoman` | 列挙可（`selectCapable=true` と自己申告） | **失敗（OSStatus -50 = paramErr）**。IME自体が現在有効かつアクティブでも、ベースID（`.base` = ひらがな）以外のモード別IDは選択不可。列挙上は "選択可能" と見えるが実体は情報提供用のダミーエントリで、実際のモード切替はIME内部の非公開機構（メニュー選択やキー入力相当の内部イベント）に依存している |
+
+**結論・設計判断: 移行しない（現行のキー送信方式を維持）**
+
+理由:
+1. **Google日本語入力で完全に失敗する**: モード別IDが列挙されても `TISSelectInputSource` が `paramErr` を返し、選択不可であることを実機で確認した。Google日本語入力は本プラグインの主要ユーザー層が使う代表的な日本語IMEであり、ここで機能しない時点で「キー送信・JIS判定・権限依存を一括で解消する」というIssueの狙いは達成できない。
+2. **Kotoeriでの成功は「ID読み戻り」レベルの検証に留まる**: `TISSelectInputSource` 後に `TISCopyCurrentKeyboardInputSource` が要求IDと一致することは確認できたが、これは既存不具合（「メニューバーは日本語だが英字しか打てない」＝ID表示と実際の変換モードが乖離する問題）そのものを検知できる指標ではない。実際のキー入力結果（ひらがな変換が有効かどうか）まではヘッドレス環境で確定検証できておらず、Kotoeriについても本当に不具合が解消するとまでは断言できない。
+3. **ハイブリッド化のコストに見合わない**: 仮にKotoeriのみモード別ID直接選択に切り替えても、Google日本語入力や未検証のATOK等のためにキー送信＋JIS判定＋アクセシビリティ権限のフォールバック経路は結局維持する必要がある。ベンダーごとに異なる非公式なID命名規則（`.RomajiTyping.Japanese`/`.Roman` 等）に依存したヒューリスティックを追加することは、将来のmacOS/IMEアップデートで壊れるリスクを増やす一方、ユーザー体験上の恩恵（権限不要・キー送信不要）を全ユーザーには提供できない。
+4. 以上より、キーボードタイプ判定＋かな/英数キー合成送信によるモード強制ロジック（本ファイル「入力モード強制（JISキーボード専用）」節）は現状維持とする。将来的に主要IME側がモード別ID選択を公式にサポートする、または実際のキー入力結果までヘッドレスに検証できる手段が確立された場合は、本調査を再検討する。
+
+
 
 ### 新機能開発時
 
@@ -285,11 +341,15 @@ if isJISKeyboard() {
 
 ### よくある問題
 
-**問題**: Swift コンパイルに失敗する
-**解決**: Xcode Command Line Tools をインストール
+**問題**: `bin/swift-ime` が見つからない（`ensure_compiled()` がエラーを返す）
+**原因**: 通常配布物には `bin/swift-ime`（プリコンパイル済みUniversal Binary）が同梱されているため
+発生しない想定だが、開発用チェックアウトやビルド漏れの場合に発生しうる
+**解決**: `./scripts/build-universal-binary.sh` を実行してバイナリを再生成する
+（内部で `swiftc` を使用するため、事前に Xcode Command Line Tools が必要）
 ```bash
 xcode-select --install
 swiftc --version
+./scripts/build-universal-binary.sh
 ```
 
 **問題**: IME が切り替わらない
@@ -310,6 +370,31 @@ swiftc --version
 - 最新版（v1.x.x以降）では自動で解決されます
 - JISキーボードの場合のみキーイベント送信により入力モードを強制
 - 問題が続く場合は、デバッグログ（`~/.local/share/nvim/ime-auto/debug.log`）を確認してください
+
+**問題**: USキーボードなのにモード切替時にフォーカス中の別アプリへキーが誤入力される（#14）
+**原因**: `isJISKeyboard()`が`LMGetKbdType()`の未知の戻り値をすべてJISとみなすフォールバックになっており、
+USキーボードでも「かな」「英数」キー（存在しない仮想キーコード）のCGEventが誤送出されていた
+**解決済み**: `KBGetLayoutType(LMGetKbdType())`でCarbon APIが返す物理レイアウト種別
+（`kKeyboardJIS`/`kKeyboardANSI`/`kKeyboardISO`）を直接判定するよう変更。
+判定不能な場合のデフォルトも「JISとみなす」から「JISとみなさない」に変更した。
+Kotoeri（日本語IME）のID一致判定も、現行macOSのID命名（`RomajiTyping`/`KanaTyping`等）の
+前方一致に対応させたが、これはCarbon APIで判定できない場合の最終フォールバックに過ぎない。
+**手動確認方法**:
+```bash
+# swift-ime バイナリで実機のキーボードレイアウト判定結果を確認できる
+~/.local/share/nvim/ime-auto/swift-ime keyboard-info
+# 出力例: kbdType=93 layoutType=1246319392 isJISKeyboard=true
+```
+USキーボードでは `isJISKeyboard=false` となり、モード切替時にキーイベントが送出されないことを確認する。
+
+**問題**: JISキーボードで入力モードが強制切り替えされない（同上の症状が権限起因で再発する）
+**原因**: `sendKanaKey`/`sendEisuKey` が送信する CGEvent は、Neovim（またはターミナルアプリ）にアクセシビリティ権限が付与されていないと OS に黙って破棄される。Input Source ID の切り替え自体は成功しているため `switchToInputSource` は `true`/exit 0 を返し、失敗が握りつぶされる
+**解決済み**: `sendKanaKey`/`sendEisuKey` の実行前に `AXIsProcessTrusted()` を確認し、権限がない場合はキー送信をスキップして stderr（および `debug.log`）に警告を出力するようにした
+**対処法**:
+1. システム設定 > プライバシーとセキュリティ > アクセシビリティ で Neovim/ターミナルアプリを許可
+2. 権限変更後は Neovim（または Swift ツールを起動しているプロセス）を再起動
+3. `~/.local/share/nvim/ime-auto/debug.log` に `Warning: Accessibility permission not granted...` が出力されていないか確認
+
 **問題**: エスケープシーケンスが動作しない
 **解決**:
 1. 全角文字で入力していることを確認
