@@ -2,7 +2,7 @@ local M = {}
 
 M.enabled = true
 
-local pending_char = nil
+local matched_count = 0
 local timer = nil
 
 local function clear_pending()
@@ -10,15 +10,15 @@ local function clear_pending()
     vim.fn.timer_stop(timer)
     timer = nil
   end
-  pending_char = nil
+  matched_count = 0
 end
 
 local function handle_escape_sequence()
   local config = require("ime-auto.config").get()
   local ime = require("ime-auto.ime")
-  
+
   clear_pending()
-  
+
   local line = vim.api.nvim_get_current_line()
   local cursor = vim.api.nvim_win_get_cursor(0)
   local row, col = cursor[1], cursor[2]
@@ -37,18 +37,36 @@ local function handle_escape_sequence()
       vim.api.nvim_win_set_cursor(0, { row, new_col })
 
       ime.save_state()
-      
+
       vim.cmd("stopinsert")
-      
+
       if config.debug then
         vim.notify("[ime-auto] Escape sequence detected", vim.log.levels.DEBUG)
       end
-      
+
       return true
     end
   end
-  
+
   return false
+end
+
+local function advance_match(count, seq_len, escape_timeout)
+  if timer then
+    vim.fn.timer_stop(timer)
+    timer = nil
+  end
+
+  if count >= seq_len then
+    matched_count = 0
+    vim.schedule(function()
+      handle_escape_sequence()
+    end)
+    return
+  end
+
+  matched_count = count
+  timer = vim.fn.timer_start(escape_timeout, clear_pending)
 end
 
 function M.on_insert_char_pre()
@@ -57,29 +75,26 @@ function M.on_insert_char_pre()
   end
 
   local char = vim.v.char
-  local config = require("ime-auto.config").get()
 
   if not char or char == "" then
     return
   end
-  
+
+  local config = require("ime-auto.config").get()
   local escape_seq = config.escape_sequence
+  local seq_len = vim.fn.strchars(escape_seq)
+
+  if seq_len == 0 then
+    return
+  end
+
+  local expected_char = vim.fn.strcharpart(escape_seq, matched_count, 1)
   local first_char = vim.fn.strcharpart(escape_seq, 0, 1)
-  local second_char = vim.fn.strcharpart(escape_seq, 1, 1)
-  
-  if pending_char == first_char and char == second_char then
-    clear_pending()
-    
-    vim.schedule(function()
-      handle_escape_sequence()
-    end)
+
+  if char == expected_char then
+    advance_match(matched_count + 1, seq_len, config.escape_timeout)
   elseif char == first_char then
-    clear_pending()
-    
-    pending_char = char
-    timer = vim.fn.timer_start(config.escape_timeout, function()
-      clear_pending()
-    end)
+    advance_match(1, seq_len, config.escape_timeout)
   else
     clear_pending()
   end
