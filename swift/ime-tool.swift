@@ -101,14 +101,21 @@ func isJISKeyboard() -> Bool {
     return false
 }
 
-// Check if an input source ID is a Japanese IME
-func isJapaneseIME(_ sourceID: String) -> Bool {
-    return sourceID.contains("Japanese") || sourceID.contains("Hiragana") || sourceID.contains("Katakana")
+// Check whether a given input source can directly produce ASCII (English mode).
+// Uses the official TIS property instead of matching substrings in the source ID,
+// since a single IME (e.g. Google Japanese Input) exposes both an ASCII-capable
+// mode and a Japanese-composing mode as distinct input sources.
+func isASCIICapable(_ source: TISInputSource) -> Bool {
+    guard let ptr = TISGetInputSourceProperty(source, kTISPropertyInputSourceIsASCIICapable) else {
+        return true
+    }
+    return CFBooleanGetValue(Unmanaged<CFBoolean>.fromOpaque(ptr).takeUnretainedValue())
 }
 
-// Check if an input source ID is ASCII-capable (English)
-func isEnglishIME(_ sourceID: String) -> Bool {
-    return sourceID.contains("ABC") || sourceID.contains("US") || sourceID.contains("keylayout")
+// Check whether the currently selected input source is ASCII-capable
+func isCurrentSourceASCIICapable() -> Bool {
+    let current = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
+    return isASCIICapable(current)
 }
 
 // Switch to input source by ID, returns true on success
@@ -156,12 +163,12 @@ func switchToInputSource(_ targetID: String, forceInputMode: Bool = true) -> Boo
 
                 // Force input mode by sending key event (JIS keyboard only)
                 if forceInputMode && isJISKeyboard() {
-                    if isJapaneseIME(targetID) {
-                        debugLog("[switchToInputSource] JIS keyboard detected - Sending Kana key to force Hiragana mode")
-                        sendKanaKey()
-                    } else if isEnglishIME(targetID) {
+                    if isASCIICapable(source) {
                         debugLog("[switchToInputSource] JIS keyboard detected - Sending Eisu key to force English mode")
                         sendEisuKey()
+                    } else {
+                        debugLog("[switchToInputSource] JIS keyboard detected - Sending Kana key to force Hiragana mode")
+                        sendKanaKey()
                     }
                 } else if forceInputMode && !isJISKeyboard() {
                     debugLog("[switchToInputSource] Non-JIS keyboard detected - Skipping key event (not needed)")
@@ -247,6 +254,11 @@ if command == "list" {
             }
         }
     }
+} else if command == "status" {
+    // Report whether the current input source is engaged in IME (non-ASCII) mode.
+    // Determined via kTISPropertyInputSourceIsASCIICapable, not ID string matching.
+    print(isCurrentSourceASCIICapable() ? "off" : "on")
+    exit(0)
 } else if command == "toggle-from-insert" {
     // Toggle from Insert mode: save current to slot A, switch to slot B
     guard let currentID = getCurrentInputSourceID() else {

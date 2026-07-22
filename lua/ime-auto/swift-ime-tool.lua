@@ -86,6 +86,24 @@ function M.get_current()
   return nil
 end
 
+-- Returns true if IME is composing (non-ASCII), false if ASCII/English mode,
+-- or nil if the status could not be determined. Trusts the Swift tool's
+-- TIS-property-based judgment rather than re-deriving it from the ID string.
+function M.get_status()
+  local result, success = run_swift_command("status")
+  if not success or not result then
+    return nil
+  end
+
+  local trimmed = utils.trim(result)
+  if trimmed == "on" then
+    return true
+  elseif trimmed == "off" then
+    return false
+  end
+  return nil
+end
+
 function M.switch_to(source_id)
   -- Validate input source ID format to prevent injection
   if not source_id or type(source_id) ~= "string" then

@@ -36,21 +36,9 @@ local function ime_control_macos(action)
   elseif action == "on" then
     swift_tool.toggle_from_normal()
   elseif action == "status" then
-    local result = swift_tool.get_current()
-    if not result then return false end
-
-    -- Known Japanese IME patterns
-    if result:match("Japanese") or result:match("Hiragana") or result:match("Katakana") then
-      return true
-    end
-
-    -- Fallback: treat non-standard ASCII identifiers as potentially active IME
-    -- Standard English layouts follow pattern: com.apple.keylayout.*
-    if not result:match("^[A-Za-z0-9%.%-_]+$") or not result:match("^com%.apple%.keylayout%.") then
-      return true
-    end
-
-    return false
+    -- Trust the Swift tool's TIS-property-based (ASCII capable) judgment
+    -- instead of re-deriving it from the input source ID string.
+    return swift_tool.get_status()
   end
 end
 
