@@ -17,6 +17,10 @@ local ime_state_cache = {
 local mode_change_timer = nil
 local MODE_CHANGE_DEBOUNCE_MS = 100
 
+local function invalidate_ime_state_cache()
+  ime_state_cache.value = nil
+end
+
 local function execute_command(cmd)
   if not cmd then return nil end
 
@@ -94,7 +98,11 @@ end
 
 function M.control(action)
   local config = require("ime-auto.config").get()
-  
+
+  if action == "on" or action == "off" then
+    invalidate_ime_state_cache()
+  end
+
   if config.ime_method == "custom" then
     local cmd = config.custom_commands[action]
     if cmd then
@@ -186,6 +194,7 @@ function M.restore_state()
   if config.os == "macos" then
     local swift_tool = require("ime-auto.swift-ime-tool")
     swift_tool.toggle_from_normal()
+    invalidate_ime_state_cache()
     return
   end
 
