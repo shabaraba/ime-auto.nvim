@@ -13,10 +13,6 @@ local ime_state_cache = {
   ttl_ms = 500
 }
 
--- Debounce timer for mode changes
-local mode_change_timer = nil
-local MODE_CHANGE_DEBOUNCE_MS = 100
-
 local function execute_command(cmd)
   if not cmd then return nil end
 
@@ -120,32 +116,8 @@ function M.control(action)
   return result
 end
 
--- Debounced version of off()
-function M.off_debounced()
-  if mode_change_timer then
-    vim.fn.timer_stop(mode_change_timer)
-  end
-
-  mode_change_timer = vim.fn.timer_start(MODE_CHANGE_DEBOUNCE_MS, function()
-    M.control("off")
-    mode_change_timer = nil
-  end)
-end
-
 function M.off()
   M.control("off")
-end
-
--- Debounced version of on()
-function M.on_debounced()
-  if mode_change_timer then
-    vim.fn.timer_stop(mode_change_timer)
-  end
-
-  mode_change_timer = vim.fn.timer_start(MODE_CHANGE_DEBOUNCE_MS, function()
-    M.control("on")
-    mode_change_timer = nil
-  end)
 end
 
 function M.on()
@@ -215,29 +187,6 @@ function M.list_input_sources()
   local swift_tool = require("ime-auto.swift-ime-tool")
   local sources = swift_tool.list()
   return sources and table.concat(sources, "\n") or nil
-end
-
-function M.parse_input_sources()
-  local ok, err = require_macos()
-  if not ok then return nil, err end
-
-  local swift_tool = require("ime-auto.swift-ime-tool")
-  local source_list = swift_tool.list()
-  if not source_list then return {} end
-
-  local sources = {}
-  for _, entry in ipairs(source_list) do
-    -- Parse "id - name" format from swift_tool.list()
-    local id, name = entry:match("^(.-)%s*%-%s*(.+)$")
-    if id and name then
-      table.insert(sources, { id = id, name = name })
-    else
-      -- Fallback: treat entire entry as ID and extract name from ID
-      local fallback_name = entry:match("%.([^.]+)$") or entry
-      table.insert(sources, { id = entry, name = fallback_name })
-    end
-  end
-  return sources
 end
 
 return M

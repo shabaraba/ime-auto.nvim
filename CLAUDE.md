@@ -23,10 +23,9 @@ ime-auto.nvim/
 ├── lua/ime-auto/
 │   ├── init.lua              # エントリーポイント・autocmd登録
 │   ├── config.lua            # 設定管理・OS自動検出
-│   ├── ime.lua               # IME制御コアロジック（キャッシング・デバウンス）
+│   ├── ime.lua               # IME制御コアロジック（キャッシング）
 │   ├── escape.lua            # エスケープシーケンス実装（InsertCharPre）
 │   ├── swift-ime-tool.lua    # Swift統合レイヤー（遅延コンパイル）
-│   ├── ui.lua                # UI/ダイアログ（入力ソース選択）
 │   └── utils.lua             # ユーティリティ関数
 ├── swift/
 │   └── ime-tool.swift        # macOS IME制御（Carbon API）
@@ -48,7 +47,6 @@ init.lua (エントリーポイント)
  │   ├─ PowerShell (Windows)
  │   └─ fcitx-remote/ibus (Linux)
  ├─ escape.lua (エスケープシーケンス)
- ├─ ui.lua (UI/ダイアログ)
  └─ utils.lua (ユーティリティ)
 ```
 
@@ -83,8 +81,7 @@ nvim --headless -u tests/minimal_init.lua \
 ### パフォーマンス要件
 
 1. **キャッシング**: 頻繁に呼ばれる関数は結果をキャッシュ（TTL: 500ms）
-2. **デバウンス**: 連続するイベントは100msデバウンス
-3. **遅延初期化**: コンパイル・読み込みは初回実行時のみ
+2. **遅延初期化**: コンパイル・読み込みは初回実行時のみ
 
 ### セキュリティ要件
 
@@ -120,7 +117,6 @@ nvim --headless -u tests/minimal_init.lua \
 
 **最適化**:
 - **IME状態キャッシュ**: `cached_ime_state` テーブル（TTL: 500ms）
-- **デバウンス**: `debounce_timer` で100msデバウンス
 
 **プラットフォーム別実装**:
 - macOS: `swift-ime-tool.lua` 経由で Swift ツール呼び出し

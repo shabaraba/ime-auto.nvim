@@ -86,22 +86,6 @@ function M.get_current()
   return nil
 end
 
-function M.switch_to(source_id)
-  -- Validate input source ID format to prevent injection
-  if not source_id or type(source_id) ~= "string" then
-    return false
-  end
-
-  -- Input source IDs should only contain alphanumeric, dots, hyphens, and underscores
-  if not source_id:match("^[%w%.%-_]+$") then
-    vim.notify("[ime-auto] Invalid input source ID format: " .. source_id, vim.log.levels.ERROR)
-    return false
-  end
-
-  local _, success = run_swift_command(source_id)
-  return success
-end
-
 function M.list()
   local result, success = run_swift_command("list")
   if not success or not result then
@@ -115,21 +99,6 @@ function M.list()
     end
   end
   return sources
-end
-
-function M.toggle()
-  local _, success = run_swift_command("toggle")
-  return success
-end
-
-function M.save_insert_ime()
-  local _, success = run_swift_command("save-insert")
-  return success
-end
-
-function M.save_normal_ime()
-  local _, success = run_swift_command("save-normal")
-  return success
 end
 
 function M.toggle_from_insert()
