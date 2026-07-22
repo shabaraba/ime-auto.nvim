@@ -34,7 +34,7 @@ end
 
 function M.trim(str)
   if not str then return nil end
-  return str:gsub("^%s+", ""):gsub("%s+$", "")
+  return vim.trim(str)
 end
 
 return M
