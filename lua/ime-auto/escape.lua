@@ -1,5 +1,7 @@
 local M = {}
 
+M.enabled = true
+
 local pending_char = nil
 local timer = nil
 
@@ -47,9 +49,13 @@ local function handle_escape_sequence()
 end
 
 function M.on_insert_char_pre()
+  if not M.enabled then
+    return
+  end
+
   local char = vim.v.char
   local config = require("ime-auto.config").get()
-  
+
   if not char or char == "" then
     return
   end
