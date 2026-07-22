@@ -26,44 +26,35 @@ func debugLog(_ message: String) {
 
 // MARK: - Helper Functions
 
+// Read a string-valued TIS property (e.g. kTISPropertyInputSourceID) from an input source
+func inputSourceProperty(_ source: TISInputSource, _ key: CFString) -> String? {
+    guard let ptr = TISGetInputSourceProperty(source, key) else {
+        return nil
+    }
+    return Unmanaged<CFString>.fromOpaque(ptr).takeUnretainedValue() as String
+}
+
 // Get current input source ID
 func getCurrentInputSourceID() -> String? {
     let current = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
-    guard let sourceID = TISGetInputSourceProperty(current, kTISPropertyInputSourceID) else {
-        return nil
-    }
-    return Unmanaged<CFString>.fromOpaque(sourceID).takeUnretainedValue() as String
+    return inputSourceProperty(current, kTISPropertyInputSourceID)
 }
 
-// Send Eisu (英数) key to force English input mode
-func sendEisuKey() {
-    let keyCode: CGKeyCode = 0x66  // kVK_JIS_Eisu
-
-    if let keyDownEvent = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) {
+// Send a key event (key down + up) to force an input mode switch
+func sendKey(_ code: CGKeyCode) {
+    if let keyDownEvent = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true) {
         keyDownEvent.post(tap: .cghidEventTap)
     }
     usleep(10000) // 10ms
 
-    if let keyUpEvent = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) {
+    if let keyUpEvent = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false) {
         keyUpEvent.post(tap: .cghidEventTap)
     }
     usleep(50000) // 50ms for the input mode to settle
 }
 
-// Send Kana (かな) key to force Hiragana input mode
-func sendKanaKey() {
-    let keyCode: CGKeyCode = 0x68  // kVK_JIS_Kana
-
-    if let keyDownEvent = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) {
-        keyDownEvent.post(tap: .cghidEventTap)
-    }
-    usleep(10000) // 10ms
-
-    if let keyUpEvent = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) {
-        keyUpEvent.post(tap: .cghidEventTap)
-    }
-    usleep(50000) // 50ms for the input mode to settle
-}
+let kVKJISEisu: CGKeyCode = 0x66
+let kVKJISKana: CGKeyCode = 0x68
 
 // Detect keyboard type
 // Note: LMGetKbdType() returns different values on Apple Silicon Macs
@@ -80,13 +71,10 @@ func isJISKeyboard() -> Bool {
     // by looking for Japanese-specific input sources
     if let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] {
         for source in sources {
-            if let idPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) {
-                let id = Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String
-                // If we have com.apple.inputmethod.Kotoeri (built-in Japanese IME),
-                // it's likely a JIS keyboard setup
-                if id == "com.apple.inputmethod.Kotoeri.Japanese" {
-                    return true
-                }
+            // If we have com.apple.inputmethod.Kotoeri (built-in Japanese IME),
+            // it's likely a JIS keyboard setup
+            if inputSourceProperty(source, kTISPropertyInputSourceID) == "com.apple.inputmethod.Kotoeri.Japanese" {
+                return true
             }
         }
     }
@@ -120,57 +108,57 @@ func switchToInputSource(_ targetID: String, forceInputMode: Bool = true) -> Boo
     }
 
     for source in sources {
-        if let idPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) {
-            let id = Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String
-            if id == targetID {
-                debugLog("[switchToInputSource] Found target source \(targetID), calling TISSelectInputSource")
-                TISSelectInputSource(source)
+        guard inputSourceProperty(source, kTISPropertyInputSourceID) == targetID else {
+            continue
+        }
 
-                // Wait for IME switch to complete (TISSelectInputSource is async)
-                usleep(50000) // 50ms initial wait
+        debugLog("[switchToInputSource] Found target source \(targetID), calling TISSelectInputSource")
+        TISSelectInputSource(source)
 
-                // Verify switch succeeded
-                var switchSucceeded = false
+        // Wait for IME switch to complete (TISSelectInputSource is async)
+        usleep(50000) // 50ms initial wait
+
+        // Verify switch succeeded
+        var switchSucceeded = false
+        if let currentID = getCurrentInputSourceID(), currentID == targetID {
+            debugLog("[switchToInputSource] Switch verified on first check (50ms)")
+            switchSucceeded = true
+        } else {
+            debugLog("[switchToInputSource] First check failed, retrying...")
+
+            // Retry up to 3 times if initial switch incomplete
+            for attempt in 0..<3 {
+                usleep(50000) // 50ms per retry
                 if let currentID = getCurrentInputSourceID(), currentID == targetID {
-                    debugLog("[switchToInputSource] Switch verified on first check (50ms)")
+                    debugLog("[switchToInputSource] Switch verified on retry \(attempt + 1)")
                     switchSucceeded = true
-                } else {
-                    debugLog("[switchToInputSource] First check failed, retrying...")
-
-                    // Retry up to 3 times if initial switch incomplete
-                    for attempt in 0..<3 {
-                        usleep(50000) // 50ms per retry
-                        if let currentID = getCurrentInputSourceID(), currentID == targetID {
-                            debugLog("[switchToInputSource] Switch verified on retry \(attempt + 1)")
-                            switchSucceeded = true
-                            break
-                        }
-                        debugLog("[switchToInputSource] Retry \(attempt + 1) failed, current=\(getCurrentInputSourceID() ?? "nil")")
-                    }
+                    break
                 }
-
-                if !switchSucceeded {
-                    debugLog("[switchToInputSource] FAILED after all retries (target: \(targetID), current: \(getCurrentInputSourceID() ?? "nil"))")
-                    return false
-                }
-
-                // Force input mode by sending key event (JIS keyboard only)
-                if forceInputMode && isJISKeyboard() {
-                    if isJapaneseIME(targetID) {
-                        debugLog("[switchToInputSource] JIS keyboard detected - Sending Kana key to force Hiragana mode")
-                        sendKanaKey()
-                    } else if isEnglishIME(targetID) {
-                        debugLog("[switchToInputSource] JIS keyboard detected - Sending Eisu key to force English mode")
-                        sendEisuKey()
-                    }
-                } else if forceInputMode && !isJISKeyboard() {
-                    debugLog("[switchToInputSource] Non-JIS keyboard detected - Skipping key event (not needed)")
-                }
-
-                return true
+                debugLog("[switchToInputSource] Retry \(attempt + 1) failed, current=\(getCurrentInputSourceID() ?? "nil")")
             }
         }
+
+        if !switchSucceeded {
+            debugLog("[switchToInputSource] FAILED after all retries (target: \(targetID), current: \(getCurrentInputSourceID() ?? "nil"))")
+            return false
+        }
+
+        // Force input mode by sending key event (JIS keyboard only)
+        if forceInputMode && isJISKeyboard() {
+            if isJapaneseIME(targetID) {
+                debugLog("[switchToInputSource] JIS keyboard detected - Sending Kana key to force Hiragana mode")
+                sendKey(kVKJISKana)
+            } else if isEnglishIME(targetID) {
+                debugLog("[switchToInputSource] JIS keyboard detected - Sending Eisu key to force English mode")
+                sendKey(kVKJISEisu)
+            }
+        } else if forceInputMode && !isJISKeyboard() {
+            debugLog("[switchToInputSource] Non-JIS keyboard detected - Skipping key event (not needed)")
+        }
+
+        return true
     }
+
     debugLog("[switchToInputSource] Target source \(targetID) not found in available sources")
     return false
 }
@@ -220,11 +208,63 @@ func getSaveFilePath(slot: String = "current") -> URL {
     return nvimDataDir.appendingPathComponent("saved-ime-\(slot).txt")
 }
 
+// MARK: - Commands
+
+// Save current input source to slot, then switch to the input source saved in
+// restoreFrom. If restoreFrom has no saved value, fallback is used; if fallback
+// is also nil, the current input source is left unchanged.
+func toggle(saveTo: String, restoreFrom: String, fallback: String?) -> Never {
+    guard let currentID = getCurrentInputSourceID() else {
+        debugLog("Error: Failed to get current input source\n")
+        exit(1)
+    }
+
+    debugLog("[DEBUG] toggle(saveTo: \(saveTo)): current=\(currentID)\n")
+
+    do {
+        try writeToSlot(currentID, slot: saveTo)
+        debugLog("[DEBUG] toggle(saveTo: \(saveTo)): saved to slot \(saveTo)=\(currentID)\n")
+    } catch {
+        debugLog("Error: Failed to write slot \(saveTo): \(error.localizedDescription)\n")
+        exit(1)
+    }
+
+    guard let targetID = readFromSlot(restoreFrom) ?? fallback else {
+        debugLog("[DEBUG] toggle(saveTo: \(saveTo)): no slot \(restoreFrom) and no fallback, staying on current\n")
+        exit(0)
+    }
+
+    debugLog("[DEBUG] toggle(saveTo: \(saveTo)): target=\(targetID)\n")
+
+    if switchToInputSource(targetID) {
+        let actualID = getCurrentInputSourceID()
+        debugLog("[DEBUG] toggle(saveTo: \(saveTo)): switched to \(actualID ?? "nil")\n")
+        exit(0)
+    } else {
+        debugLog("Error: Input source not found: \(targetID)\n")
+        exit(1)
+    }
+}
+
+// Save current input source to slot
+func saveCurrentInputSource(to slot: String) -> Never {
+    guard let currentID = getCurrentInputSourceID() else {
+        debugLog("Error: Failed to get current input source\n")
+        exit(1)
+    }
+
+    do {
+        try writeToSlot(currentID, slot: slot)
+        exit(0)
+    } catch {
+        debugLog("Error: Failed to write slot \(slot): \(error.localizedDescription)\n")
+        exit(1)
+    }
+}
+
 guard CommandLine.arguments.count > 1 else {
     // No argument: get current input source
-    let current = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
-    if let sourceID = TISGetInputSourceProperty(current, kTISPropertyInputSourceID) {
-        let id = Unmanaged<CFString>.fromOpaque(sourceID).takeUnretainedValue() as String
+    if let id = getCurrentInputSourceID() {
         print(id)
     }
     exit(0)
@@ -236,82 +276,25 @@ if command == "list" {
     // List all selectable input sources
     if let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] {
         for source in sources {
-            if let idPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) {
-                let id = Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String
-                if let namePtr = TISGetInputSourceProperty(source, kTISPropertyLocalizedName) {
-                    let name = Unmanaged<CFString>.fromOpaque(namePtr).takeUnretainedValue() as String
-                    print("\(id) - \(name)")
-                } else {
-                    print(id)
-                }
+            guard let id = inputSourceProperty(source, kTISPropertyInputSourceID) else {
+                continue
+            }
+            if let name = inputSourceProperty(source, kTISPropertyLocalizedName) {
+                print("\(id) - \(name)")
+            } else {
+                print(id)
             }
         }
     }
 } else if command == "toggle-from-insert" {
-    // Toggle from Insert mode: save current to slot A, switch to slot B
-    guard let currentID = getCurrentInputSourceID() else {
-        debugLog("Error: Failed to get current input source\n")
-        exit(1)
-    }
-
-    debugLog("[DEBUG] toggle-from-insert: current=\(currentID)\n")
-
-    // Save current to slot A
-    do {
-        try writeToSlot(currentID, slot: "a")
-        debugLog("[DEBUG] toggle-from-insert: saved to slot A=\(currentID)\n")
-    } catch {
-        debugLog("Error: Failed to write slot A: \(error.localizedDescription)\n")
-        exit(1)
-    }
-
-    // Switch to slot B (if exists), otherwise switch to default English (ABC)
-    let targetID = readFromSlot("b") ?? "com.apple.keylayout.ABC"
-    debugLog("[DEBUG] toggle-from-insert: target=\(targetID)\n")
-
-    if switchToInputSource(targetID) {
-        let actualID = getCurrentInputSourceID()
-        debugLog("[DEBUG] toggle-from-insert: switched to \(actualID ?? "nil")\n")
-        exit(0)
-    } else {
-        debugLog("Error: Input source not found: \(targetID)\n")
-        exit(1)
-    }
+    // Toggle from Insert mode: save current to slot A, switch to slot B.
+    // No fallback: if slot B is empty, stay on the current input source.
+    toggle(saveTo: "a", restoreFrom: "b", fallback: nil)
 
 } else if command == "toggle-from-normal" {
-    // Toggle from Normal mode: save current to slot B, switch to slot A
-    guard let currentID = getCurrentInputSourceID() else {
-        debugLog("Error: Failed to get current input source\n")
-        exit(1)
-    }
-
-    debugLog("[DEBUG] toggle-from-normal: current=\(currentID)\n")
-
-    // Save current to slot B
-    do {
-        try writeToSlot(currentID, slot: "b")
-        debugLog("[DEBUG] toggle-from-normal: saved to slot B=\(currentID)\n")
-    } catch {
-        debugLog("Error: Failed to write slot B: \(error.localizedDescription)\n")
-        exit(1)
-    }
-
-    // Switch to slot A (if exists), otherwise keep current
-    guard let targetID = readFromSlot("a") else {
-        debugLog("[DEBUG] toggle-from-normal: no slot A, staying on current\n")
-        exit(0)  // No slot A, stay on current
-    }
-
-    debugLog("[DEBUG] toggle-from-normal: target=\(targetID)\n")
-
-    if switchToInputSource(targetID) {
-        let actualID = getCurrentInputSourceID()
-        debugLog("[DEBUG] toggle-from-normal: switched to \(actualID ?? "nil")\n")
-        exit(0)
-    } else {
-        debugLog("Error: Input source not found: \(targetID)\n")
-        exit(1)
-    }
+    // Toggle from Normal mode: save current to slot B, switch to slot A.
+    // No fallback: if slot A is empty, stay on the current input source.
+    toggle(saveTo: "b", restoreFrom: "a", fallback: nil)
 
 } else if command == "toggle" {
     // Toggle between two saved IME states
@@ -356,33 +339,11 @@ if command == "list" {
     }
 } else if command == "save-insert" {
     // Save current input source to slot A (insert mode IME)
-    guard let currentID = getCurrentInputSourceID() else {
-        debugLog("Error: Failed to get current input source\n")
-        exit(1)
-    }
-
-    do {
-        try writeToSlot(currentID, slot: "a")
-        exit(0)
-    } catch {
-        debugLog("Error: Failed to write slot A: \(error.localizedDescription)\n")
-        exit(1)
-    }
+    saveCurrentInputSource(to: "a")
 
 } else if command == "save-normal" {
     // Save current input source to slot B (normal mode IME)
-    guard let currentID = getCurrentInputSourceID() else {
-        debugLog("Error: Failed to get current input source\n")
-        exit(1)
-    }
-
-    do {
-        try writeToSlot(currentID, slot: "b")
-        exit(0)
-    } catch {
-        debugLog("Error: Failed to write slot B: \(error.localizedDescription)\n")
-        exit(1)
-    }
+    saveCurrentInputSource(to: "b")
 
 } else {
     // Legacy: Switch to specified input source
