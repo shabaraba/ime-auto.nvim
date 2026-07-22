@@ -4,21 +4,33 @@ import Foundation
 // MARK: - Debug Logging
 
 let debugLogEnabled = ProcessInfo.processInfo.environment["IME_AUTO_DEBUG"] != nil
-let debugLogPath = FileManager.default.homeDirectoryForCurrentUser
-    .appendingPathComponent(".local/share/nvim/ime-auto/debug.log")
+let nvimDataDir = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent(".local/share/nvim/ime-auto")
+let debugLogPath = nvimDataDir.appendingPathComponent("debug.log")
+
+// Ensure the data directory exists with secure permissions (owner rwx only)
+func ensureDataDirExists() {
+    guard !FileManager.default.fileExists(atPath: nvimDataDir.path) else { return }
+    try? FileManager.default.createDirectory(
+        at: nvimDataDir, withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700]
+    )
+}
 
 func debugLog(_ message: String) {
     if debugLogEnabled {
         let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
         let logMessage = "[\(timestamp)] \(message)\n"
 
+        ensureDataDirExists()
+        if !FileManager.default.fileExists(atPath: debugLogPath.path) {
+            FileManager.default.createFile(atPath: debugLogPath.path, contents: nil, attributes: [.posixPermissions: 0o600])
+        }
+
         if let handle = FileHandle(forWritingAtPath: debugLogPath.path) {
             handle.seekToEndOfFile()
             handle.write(logMessage.data(using: .utf8)!)
             handle.closeFile()
-        } else {
-            // Create file if it doesn't exist
-            try? logMessage.write(to: debugLogPath, atomically: true, encoding: .utf8)
         }
 
         fputs(message + "\n", stderr)
@@ -294,9 +306,21 @@ func switchFailureMessage(_ result: InputSourceSwitchResult, targetID: String) -
 // Write IME ID to slot with secure permissions
 func writeToSlot(_ id: String, slot: String) throws {
     let slotFile = getSaveFilePath(slot: slot)
-    try id.write(to: slotFile, atomically: true, encoding: .utf8)
-    // Set secure file permissions (owner read/write only)
-    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: slotFile.path)
+    let path = slotFile.path
+
+    // Create the file with secure permissions before writing, so it never
+    // exists with the default (umask-dependent) permissions.
+    if !FileManager.default.fileExists(atPath: path) {
+        FileManager.default.createFile(atPath: path, contents: nil, attributes: [.posixPermissions: 0o600])
+    }
+
+    let handle = try FileHandle(forWritingTo: slotFile)
+    defer { handle.closeFile() }
+    handle.truncateFile(atOffset: 0)
+    handle.write(id.data(using: .utf8) ?? Data())
+
+    // Re-assert permissions in case the file already existed with different ones
+    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
 }
 
 // Read IME ID from slot
@@ -317,20 +341,10 @@ func getSaveFilePath(slot: String = "current") -> URL {
         exit(1)
     }
 
-    let homeDir = FileManager.default.homeDirectoryForCurrentUser
-    let nvimDataDir = homeDir.appendingPathComponent(".local/share/nvim/ime-auto")
-
-    // Create directory if it doesn't exist with secure permissions
-    if !FileManager.default.fileExists(atPath: nvimDataDir.path) {
-        do {
-            let attributes: [FileAttributeKey: Any] = [
-                .posixPermissions: 0o700  // Owner read/write/execute only
-            ]
-            try FileManager.default.createDirectory(at: nvimDataDir, withIntermediateDirectories: true, attributes: attributes)
-        } catch {
-            debugLog("Error: Failed to create directory \(nvimDataDir.path): \(error)\n")
-            exit(1)
-        }
+    ensureDataDirExists()
+    guard FileManager.default.fileExists(atPath: nvimDataDir.path) else {
+        debugLog("Error: Failed to create directory \(nvimDataDir.path)\n")
+        exit(1)
     }
 
     return nvimDataDir.appendingPathComponent("saved-ime-\(slot).txt")
