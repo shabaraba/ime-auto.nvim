@@ -105,6 +105,25 @@ require("ime-auto").setup({ debug = true })
 
 `:messages` でログを確認できます。
 
+### Windows（実験的サポート）
+
+Windows では PowerShell 経由で IME (Microsoft IME の日本語入力) を制御します。
+
+**動作確認手順（Windows実機）**:
+
+1. `require("ime-auto").setup({ debug = true })` を設定して Neovim を起動
+2. IME を日本語入力（かな入力）に切り替えた状態で `:lua require("ime-auto.ime").control("status")` を実行し、`true` が返ることを確認
+3. `:lua require("ime-auto.ime").control("off")` を実行し、IME が英数入力に切り替わることを確認。再度 `off` を実行しても状態が変化しない（決定的）ことを確認
+4. `:lua require("ime-auto.ime").control("on")` を実行し、IME が日本語入力に戻ることを確認。再度 `on` を実行しても状態が変化しない（決定的）ことを確認
+5. PowerShell の実行結果でエラーが出た場合（例: 実行ポリシー制限）、`:messages` に `[ime-auto] Windows IME toggle failed: ...` の通知が出ることを確認
+
+**既知の制限**:
+
+- IME の状態確認は `Get-WinUserLanguageList` の `InputMethodTips` に `0411:00000411`（Microsoft IME）が含まれるかで判定しており、他社製 IME（Google 日本語入力など）を使用している場合は状態判定に失敗する可能性があります
+- 状態が判定できない場合（PowerShell 実行エラーなど）は、意図しない状態にトグルしてしまうことを避けるため、切り替え自体をスキップし警告を通知します
+- IME の切り替えには `{KANJI}`（変換キー相当）を送信する `SendKeys` を使用しています。フォーカスが Neovim のウィンドウにない場合など、キー送信が期待通りに機能しない環境がある可能性があります
+- 実機 Windows 環境でのテストは実施できていないため、上記の手順で動作確認の上、問題があれば Issue で報告してください
+
 ## 🤝 CONTRIBUTING
 
 Issue 報告や Pull Request を歓迎します！

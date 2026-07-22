@@ -54,14 +54,64 @@ local function ime_control_macos(action)
   end
 end
 
+local WINDOWS_JAPANESE_IME_TIP = "0411:00000411"
+
+local windows = {}
+
+function windows.build_status_command()
+  return [[powershell -NoProfile -Command "Get-WinUserLanguageList | Where-Object {$_.LanguageTag -eq 'ja-JP'} | Select-Object -ExpandProperty InputMethodTips"]]
+end
+
+function windows.build_toggle_command()
+  return [[powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{KANJI}')"]]
+end
+
+-- Returns true only when the current state differs from the desired state.
+-- current_state == nil means "unknown", in which case we refuse to guess
+-- (a blind toggle could move the IME into the wrong state).
+function windows.should_toggle(current_state, desired_state)
+  if current_state == nil then
+    return false
+  end
+  return current_state ~= desired_state
+end
+
+local function windows_get_status()
+  local result = execute_command(windows.build_status_command())
+  if not result then return nil end
+  return result:match(WINDOWS_JAPANESE_IME_TIP) ~= nil
+end
+
+local function windows_send_toggle_key()
+  local result = vim.fn.system(windows.build_toggle_command())
+
+  if vim.v.shell_error ~= 0 then
+    utils.notify("Windows IME toggle failed: " .. tostring(result), vim.log.levels.ERROR)
+    return nil
+  end
+
+  return result
+end
+
 local function ime_control_windows(action)
-  if action == "off" then
-    return vim.fn.system([[powershell -Command "[System.Windows.Forms.SendKeys]::SendWait('{KANJI}')"]])
-  elseif action == "on" then
-    return vim.fn.system([[powershell -Command "[System.Windows.Forms.SendKeys]::SendWait('{KANJI}')"]])
-  elseif action == "status" then
-    local result = execute_command([[powershell -Command "Get-WinUserLanguageList | Where-Object {$_.LanguageTag -eq 'ja-JP'} | Select-Object -ExpandProperty InputMethodTips"]])
-    return result and result:match("0411:00000411") ~= nil
+  if action == "status" then
+    return windows_get_status()
+  end
+
+  if action == "on" or action == "off" then
+    local desired_state = action == "on"
+    local current_state = windows_get_status()
+
+    if current_state == nil then
+      utils.notify("Unable to determine Windows IME state; skipping toggle", vim.log.levels.WARN)
+      return nil
+    end
+
+    if not windows.should_toggle(current_state, desired_state) then
+      return ""
+    end
+
+    return windows_send_toggle_key()
   end
 end
 
@@ -239,5 +289,8 @@ function M.parse_input_sources()
   end
   return sources
 end
+
+-- Exposed for unit testing only; not part of the public API.
+M._windows = windows
 
 return M

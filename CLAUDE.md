@@ -124,8 +124,37 @@ nvim --headless -u tests/minimal_init.lua \
 
 **プラットフォーム別実装**:
 - macOS: `swift-ime-tool.lua` 経由で Swift ツール呼び出し
-- Windows: PowerShell スクリプト実行
+- Windows: PowerShell スクリプト実行（詳細は後述）
 - Linux: `fcitx-remote` または `ibus` コマンド実行
+
+**Windows実装の詳細（v1.x.x以降）**:
+
+`ime_control_windows()` は以下の決定的なロジックで動作する：
+
+```
+1. status 取得: Get-WinUserLanguageList の InputMethodTips に
+   "0411:00000411"（Microsoft IME）が含まれるかで日本語入力中かを判定
+2. on/off アクション:
+   a. 現在の状態を取得（status と同じロジック）
+   b. 状態が不明（PowerShell実行失敗等）な場合 → トグルをスキップし警告を通知
+      （不明な状態から盲目的にトグルすると誤った状態に遷移するため）
+   c. 現在の状態が目標状態と一致 → 何もしない（決定的）
+   d. 一致しない場合のみ {KANJI} キー送信でトグル
+3. キー送信コマンドの先頭で `Add-Type -AssemblyName System.Windows.Forms`
+   を実行してから `SendKeys` を参照する
+   （PowerShellはこのアセンブリを自動ロードしないため、これがないと
+   "Unable to find type" エラーで常に失敗していた）
+4. `vim.fn.system` 実行後は `vim.v.shell_error` を確認し、
+   0以外の場合は `vim.notify` でエラー内容を通知する
+```
+
+テスト可能なロジック（コマンド文字列生成・トグル要否判定）は
+`ime.lua` 内のローカル `windows` テーブルに切り出し、
+`M._windows` としてテスト専用に公開している（`tests/priority-1/04_windows_ime_control_spec.lua`）。
+
+**既知の制限**:
+- 日本語IMEの判定は Microsoft IME (`0411:00000411`) のみに対応。他社製IMEでは状態判定できない可能性がある
+- 実機 Windows 環境での動作確認は未実施（コードロジックの検証のみ）。README の「Windows（実験的サポート）」節に手動確認手順を記載
 
 ### 3. スロットベース状態管理
 
