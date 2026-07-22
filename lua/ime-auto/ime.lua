@@ -13,10 +13,6 @@ local ime_state_cache = {
   ttl_ms = 500
 }
 
--- Debounce timer for mode changes
-local mode_change_timer = nil
-local MODE_CHANGE_DEBOUNCE_MS = 100
-
 local function invalidate_ime_state_cache()
   ime_state_cache.value = nil
 end
@@ -118,32 +114,8 @@ function M.control(action)
   return result
 end
 
--- Debounced version of off()
-function M.off_debounced()
-  if mode_change_timer then
-    vim.fn.timer_stop(mode_change_timer)
-  end
-
-  mode_change_timer = vim.fn.timer_start(MODE_CHANGE_DEBOUNCE_MS, function()
-    M.control("off")
-    mode_change_timer = nil
-  end)
-end
-
 function M.off()
   M.control("off")
-end
-
--- Debounced version of on()
-function M.on_debounced()
-  if mode_change_timer then
-    vim.fn.timer_stop(mode_change_timer)
-  end
-
-  mode_change_timer = vim.fn.timer_start(MODE_CHANGE_DEBOUNCE_MS, function()
-    M.control("on")
-    mode_change_timer = nil
-  end)
 end
 
 function M.on()
