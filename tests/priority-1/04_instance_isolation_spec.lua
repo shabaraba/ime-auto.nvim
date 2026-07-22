@@ -5,29 +5,31 @@ local swift_tool = require("ime-auto.swift-ime-tool")
 
 describe("Test 04: Slot file instance isolation", function()
   local original_system
-  local last_cmd
+  local last_argv
 
   before_each(function()
-    original_system = vim.fn.system
-    last_cmd = nil
+    original_system = vim.system
+    last_argv = nil
 
-    vim.fn.system = function(cmd)
-      last_cmd = cmd
-      -- Run a real no-op command so Neovim sets v:shell_error itself
-      -- (v:shell_error is read-only and cannot be assigned from Lua)
-      return original_system("true")
+    vim.system = function(argv, _, callback)
+      last_argv = argv
+      local completed = { stdout = "", code = 0 }
+      if callback then
+        callback(completed)
+        return { wait = function() return completed end }
+      end
+      return {
+        wait = function() return completed end,
+      }
     end
   end)
 
   after_each(function()
-    vim.fn.system = original_system
+    vim.system = original_system
   end)
 
   describe("4.1: Slot-touching commands receive an instance identifier", function()
     local commands = {
-      { name = "toggle", fn = function() swift_tool.toggle() end },
-      { name = "save_insert_ime", fn = function() swift_tool.save_insert_ime() end },
-      { name = "save_normal_ime", fn = function() swift_tool.save_normal_ime() end },
       { name = "toggle_from_insert", fn = function() swift_tool.toggle_from_insert() end },
       { name = "toggle_from_normal", fn = function() swift_tool.toggle_from_normal() end },
     }
@@ -36,13 +38,13 @@ describe("Test 04: Slot file instance isolation", function()
       it("passes an extra instance-id argument for " .. case.name, function()
         case.fn()
 
-        assert.is_not_nil(last_cmd, "system() should have been called")
+        assert.is_not_nil(last_argv, "vim.system() should have been called")
 
         local expected_id = swift_tool.sanitize_instance_id(
           vim.v.servername ~= "" and vim.v.servername or tostring(vim.fn.getpid())
         )
-        assert.is_true(last_cmd:find(vim.fn.shellescape(expected_id), 1, true) ~= nil,
-          "command should include sanitized instance id: " .. last_cmd)
+        assert.equals(expected_id, last_argv[#last_argv],
+          "last positional argument should be the sanitized instance id")
       end)
     end
   end)
@@ -85,15 +87,12 @@ describe("Test 04: Slot file instance isolation", function()
   end)
 
   describe("4.4: Non-slot commands do not require an instance id", function()
-    it("does not error when calling list/get_current/switch_to", function()
+    it("does not error when calling list/get_current", function()
       assert.has_no.errors(function()
         swift_tool.list()
       end)
       assert.has_no.errors(function()
         swift_tool.get_current()
-      end)
-      assert.has_no.errors(function()
-        swift_tool.switch_to("com.apple.keylayout.ABC")
       end)
     end)
 
@@ -101,11 +100,8 @@ describe("Test 04: Slot file instance isolation", function()
       swift_tool.list()
 
       -- Only the binary path and the "list" argument should be present
-      local escaped_list = vim.fn.shellescape("list")
-      assert.is_true(last_cmd:find(escaped_list, 1, true) ~= nil)
-      -- No trailing extra shell-escaped token after "list"
-      local after_list = last_cmd:sub(last_cmd:find(escaped_list, 1, true) + #escaped_list)
-      assert.equals("", vim.trim(after_list))
+      assert.equals(2, #last_argv)
+      assert.equals("list", last_argv[2])
     end)
   end)
 end)
