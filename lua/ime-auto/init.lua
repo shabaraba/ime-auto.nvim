@@ -123,6 +123,7 @@ end
 
 function M.enable()
   enabled = true
+  M.escape.enabled = true
   -- Only turn off IME on enable if not using slot-based management
   local config = M.config.get()
   if M.utils.is_normal_mode() and config.os ~= "macos" and config.os ~= "linux" and config.os ~= "windows" then
@@ -133,6 +134,7 @@ end
 
 function M.disable()
   enabled = false
+  M.escape.enabled = false
   M.utils.notify("Disabled", vim.log.levels.INFO)
 end
 
