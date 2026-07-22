@@ -111,68 +111,123 @@ func isEnglishIME(_ sourceID: String) -> Bool {
     return sourceID.contains("ABC") || sourceID.contains("US") || sourceID.contains("keylayout")
 }
 
-// Switch to input source by ID, returns true on success
-// Also sends appropriate key event to force input mode (English/Japanese)
-func switchToInputSource(_ targetID: String, forceInputMode: Bool = true) -> Bool {
-    guard let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] else {
-        debugLog("[switchToInputSource] Failed to get input source list")
+// Check if a boolean CFTypeRef property of an input source is true
+func boolInputSourceProperty(_ source: TISInputSource, _ key: CFString) -> Bool {
+    guard let ptr = TISGetInputSourceProperty(source, key) else {
         return false
     }
+    return Unmanaged<CFBoolean>.fromOpaque(ptr).takeUnretainedValue() == kCFBooleanTrue
+}
+
+// Check if an input source can actually be selected via TISSelectInputSource
+func isSelectableInputSource(_ source: TISInputSource) -> Bool {
+    return boolInputSourceProperty(source, kTISPropertyInputSourceIsSelectCapable)
+        && boolInputSourceProperty(source, kTISPropertyInputSourceIsEnabled)
+}
+
+// Result of attempting to switch input source
+enum InputSourceSwitchResult {
+    case success
+    case notFound
+    case notSelectable
+    case switchFailed
+}
+
+// Switch to input source by ID, returns the outcome of the attempt
+// Also sends appropriate key event to force input mode (English/Japanese)
+func switchToInputSource(_ targetID: String, forceInputMode: Bool = true) -> InputSourceSwitchResult {
+    guard let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] else {
+        debugLog("[switchToInputSource] Failed to get input source list")
+        return .notFound
+    }
+
+    var foundButNotSelectable = false
 
     for source in sources {
-        if let idPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) {
-            let id = Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String
-            if id == targetID {
-                debugLog("[switchToInputSource] Found target source \(targetID), calling TISSelectInputSource")
-                TISSelectInputSource(source)
+        guard let idPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) else {
+            continue
+        }
+        let id = Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String
+        guard id == targetID else {
+            continue
+        }
 
-                // Wait for IME switch to complete (TISSelectInputSource is async)
-                usleep(50000) // 50ms initial wait
+        guard isSelectableInputSource(source) else {
+            debugLog("[switchToInputSource] Target source \(targetID) found but not selectable (disabled or select-incapable)")
+            foundButNotSelectable = true
+            continue
+        }
 
-                // Verify switch succeeded
-                var switchSucceeded = false
+        debugLog("[switchToInputSource] Found target source \(targetID), calling TISSelectInputSource")
+        let status = TISSelectInputSource(source)
+        if status != noErr {
+            debugLog("[switchToInputSource] TISSelectInputSource failed with OSStatus \(status) for \(targetID)")
+            return .switchFailed
+        }
+
+        // Wait for IME switch to complete (TISSelectInputSource is async)
+        usleep(50000) // 50ms initial wait
+
+        // Verify switch succeeded
+        var switchSucceeded = false
+        if let currentID = getCurrentInputSourceID(), currentID == targetID {
+            debugLog("[switchToInputSource] Switch verified on first check (50ms)")
+            switchSucceeded = true
+        } else {
+            debugLog("[switchToInputSource] First check failed, retrying...")
+
+            // Retry up to 3 times if initial switch incomplete
+            for attempt in 0..<3 {
+                usleep(50000) // 50ms per retry
                 if let currentID = getCurrentInputSourceID(), currentID == targetID {
-                    debugLog("[switchToInputSource] Switch verified on first check (50ms)")
+                    debugLog("[switchToInputSource] Switch verified on retry \(attempt + 1)")
                     switchSucceeded = true
-                } else {
-                    debugLog("[switchToInputSource] First check failed, retrying...")
-
-                    // Retry up to 3 times if initial switch incomplete
-                    for attempt in 0..<3 {
-                        usleep(50000) // 50ms per retry
-                        if let currentID = getCurrentInputSourceID(), currentID == targetID {
-                            debugLog("[switchToInputSource] Switch verified on retry \(attempt + 1)")
-                            switchSucceeded = true
-                            break
-                        }
-                        debugLog("[switchToInputSource] Retry \(attempt + 1) failed, current=\(getCurrentInputSourceID() ?? "nil")")
-                    }
+                    break
                 }
-
-                if !switchSucceeded {
-                    debugLog("[switchToInputSource] FAILED after all retries (target: \(targetID), current: \(getCurrentInputSourceID() ?? "nil"))")
-                    return false
-                }
-
-                // Force input mode by sending key event (JIS keyboard only)
-                if forceInputMode && isJISKeyboard() {
-                    if isJapaneseIME(targetID) {
-                        debugLog("[switchToInputSource] JIS keyboard detected - Sending Kana key to force Hiragana mode")
-                        sendKanaKey()
-                    } else if isEnglishIME(targetID) {
-                        debugLog("[switchToInputSource] JIS keyboard detected - Sending Eisu key to force English mode")
-                        sendEisuKey()
-                    }
-                } else if forceInputMode && !isJISKeyboard() {
-                    debugLog("[switchToInputSource] Non-JIS keyboard detected - Skipping key event (not needed)")
-                }
-
-                return true
+                debugLog("[switchToInputSource] Retry \(attempt + 1) failed, current=\(getCurrentInputSourceID() ?? "nil")")
             }
         }
+
+        if !switchSucceeded {
+            debugLog("[switchToInputSource] FAILED after all retries (target: \(targetID), current: \(getCurrentInputSourceID() ?? "nil"))")
+            return .switchFailed
+        }
+
+        // Force input mode by sending key event (JIS keyboard only)
+        if forceInputMode && isJISKeyboard() {
+            if isJapaneseIME(targetID) {
+                debugLog("[switchToInputSource] JIS keyboard detected - Sending Kana key to force Hiragana mode")
+                sendKanaKey()
+            } else if isEnglishIME(targetID) {
+                debugLog("[switchToInputSource] JIS keyboard detected - Sending Eisu key to force English mode")
+                sendEisuKey()
+            }
+        } else if forceInputMode && !isJISKeyboard() {
+            debugLog("[switchToInputSource] Non-JIS keyboard detected - Skipping key event (not needed)")
+        }
+
+        return .success
+    }
+
+    if foundButNotSelectable {
+        return .notSelectable
     }
     debugLog("[switchToInputSource] Target source \(targetID) not found in available sources")
-    return false
+    return .notFound
+}
+
+// Build a user-facing error message describing why a switch failed
+func switchFailureMessage(_ result: InputSourceSwitchResult, targetID: String) -> String {
+    switch result {
+    case .success:
+        return ""
+    case .notFound:
+        return "Error: Input source not found: \(targetID)\n"
+    case .notSelectable:
+        return "Error: Input source found but cannot be selected (disabled or select-incapable): \(targetID)\n"
+    case .switchFailed:
+        return "Error: Failed to switch to input source: \(targetID)\n"
+    }
 }
 
 // Write IME ID to slot with secure permissions
@@ -269,12 +324,13 @@ if command == "list" {
     let targetID = readFromSlot("b") ?? "com.apple.keylayout.ABC"
     debugLog("[DEBUG] toggle-from-insert: target=\(targetID)\n")
 
-    if switchToInputSource(targetID) {
+    let switchResult = switchToInputSource(targetID)
+    if switchResult == .success {
         let actualID = getCurrentInputSourceID()
         debugLog("[DEBUG] toggle-from-insert: switched to \(actualID ?? "nil")\n")
         exit(0)
     } else {
-        debugLog("Error: Input source not found: \(targetID)\n")
+        debugLog(switchFailureMessage(switchResult, targetID: targetID))
         exit(1)
     }
 
@@ -304,12 +360,13 @@ if command == "list" {
 
     debugLog("[DEBUG] toggle-from-normal: target=\(targetID)\n")
 
-    if switchToInputSource(targetID) {
+    let switchResult = switchToInputSource(targetID)
+    if switchResult == .success {
         let actualID = getCurrentInputSourceID()
         debugLog("[DEBUG] toggle-from-normal: switched to \(actualID ?? "nil")\n")
         exit(0)
     } else {
-        debugLog("Error: Input source not found: \(targetID)\n")
+        debugLog(switchFailureMessage(switchResult, targetID: targetID))
         exit(1)
     }
 
@@ -348,10 +405,11 @@ if command == "list" {
         exit(0)
     }
 
-    if switchToInputSource(target) {
+    let switchResult = switchToInputSource(target)
+    if switchResult == .success {
         exit(0)
     } else {
-        debugLog("Error: Input source not found: \(target)\n")
+        debugLog(switchFailureMessage(switchResult, targetID: target))
         exit(1)
     }
 } else if command == "save-insert" {
@@ -386,10 +444,11 @@ if command == "list" {
 
 } else {
     // Legacy: Switch to specified input source
-    if switchToInputSource(command) {
+    let switchResult = switchToInputSource(command)
+    if switchResult == .success {
         exit(0)
     } else {
-        debugLog("Error: Input source not found: \(command)\n")
+        debugLog(switchFailureMessage(switchResult, targetID: command))
         exit(1)
     }
 }
