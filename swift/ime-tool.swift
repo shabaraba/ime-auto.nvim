@@ -35,8 +35,21 @@ func getCurrentInputSourceID() -> String? {
     return Unmanaged<CFString>.fromOpaque(sourceID).takeUnretainedValue() as String
 }
 
+// Check whether this process has Accessibility permission granted.
+// Posting CGEvents (Eisu/Kana key events) is silently dropped by the OS
+// without this permission, so callers must check before posting.
+func checkAccessibilityPermission() -> Bool {
+    let trusted = AXIsProcessTrusted()
+    if !trusted {
+        debugLog("Warning: Accessibility permission not granted. Key events will not be sent. Grant permission in System Settings > Privacy & Security > Accessibility.")
+    }
+    return trusted
+}
+
 // Send Eisu (英数) key to force English input mode
 func sendEisuKey() {
+    guard checkAccessibilityPermission() else { return }
+
     let keyCode: CGKeyCode = 0x66  // kVK_JIS_Eisu
 
     if let keyDownEvent = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) {
@@ -52,6 +65,8 @@ func sendEisuKey() {
 
 // Send Kana (かな) key to force Hiragana input mode
 func sendKanaKey() {
+    guard checkAccessibilityPermission() else { return }
+
     let keyCode: CGKeyCode = 0x68  // kVK_JIS_Kana
 
     if let keyDownEvent = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) {
