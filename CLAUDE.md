@@ -211,7 +211,29 @@ if isJISKeyboard() {
 - 最悪ケース: 200ms（3回リトライ後に完了）
 - JISキーボード: +30ms（キーイベント送信）
 - 体感への影響: ほぼなし（人間の反応時間は200ms以上）
-## 開発ワークフロー
+
+### 5. モード別 TISInputSource ID 直接選択の調査（Issue #36・設計判断記録）
+
+**背景**: 現行実装（Input Source 切替＋JISキーボード判定＋かな/英数キー合成送信＋アクセシビリティ権限）は特殊対応の積み重ねである。多くの日本語IMEはモードごとに個別の `TISInputSource` ID（例: `com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese` vs `...Roman`）を公開しているため、それを `TISSelectInputSource` で直接選択できればキー送信・キーボード判定・権限依存を排除できるのではないか、という仮説を検証した。
+
+**調査方法**: 開発機（Apple Silicon Mac / macOS 26 / Swift 6.2）上で `swift-ime list`（`TISCreateInputSourceList(nil, false/true)`）を実行し、実際にインストールされている日本語IME（Kotoeri、Google日本語入力、azooKey）のモード別IDを列挙。その上で、各モード別IDに対して直接 `TISSelectInputSource` を呼び、`TISCopyCurrentKeyboardInputSource` で実際に切り替わるかを検証するPoCツールを作成し実行した。検証後は変更したシステムの入力ソース有効化状態を元に戻した。
+
+**検証結果**:
+
+| IME | モード別ID | 列挙可否 (`includeAllInstalled: true`) | `TISSelectInputSource` の結果 |
+|---|---|---|---|
+| Kotoeri（Apple標準・ローマ字入力） | `...Kotoeri.RomajiTyping.Japanese` / `...Roman` | 列挙可 | 親メソッド（`...RomajiTyping`）を `TISEnableInputSource` で有効化した状態でのみ **成功（OSStatus 0）**。切替後 `TISCopyCurrentKeyboardInputSource` は要求したモード別IDを正しく返した |
+| Google日本語入力 | `com.google.inputmethod.Japanese.Roman` / `.Katakana` / `.HalfWidthKana` / `.FullWidthRoman` | 列挙可（`selectCapable=true` と自己申告） | **失敗（OSStatus -50 = paramErr）**。IME自体が現在有効かつアクティブでも、ベースID（`.base` = ひらがな）以外のモード別IDは選択不可。列挙上は "選択可能" と見えるが実体は情報提供用のダミーエントリで、実際のモード切替はIME内部の非公開機構（メニュー選択やキー入力相当の内部イベント）に依存している |
+
+**結論・設計判断: 移行しない（現行のキー送信方式を維持）**
+
+理由:
+1. **Google日本語入力で完全に失敗する**: モード別IDが列挙されても `TISSelectInputSource` が `paramErr` を返し、選択不可であることを実機で確認した。Google日本語入力は本プラグインの主要ユーザー層が使う代表的な日本語IMEであり、ここで機能しない時点で「キー送信・JIS判定・権限依存を一括で解消する」というIssueの狙いは達成できない。
+2. **Kotoeriでの成功は「ID読み戻り」レベルの検証に留まる**: `TISSelectInputSource` 後に `TISCopyCurrentKeyboardInputSource` が要求IDと一致することは確認できたが、これは既存不具合（「メニューバーは日本語だが英字しか打てない」＝ID表示と実際の変換モードが乖離する問題）そのものを検知できる指標ではない。実際のキー入力結果（ひらがな変換が有効かどうか）まではヘッドレス環境で確定検証できておらず、Kotoeriについても本当に不具合が解消するとまでは断言できない。
+3. **ハイブリッド化のコストに見合わない**: 仮にKotoeriのみモード別ID直接選択に切り替えても、Google日本語入力や未検証のATOK等のためにキー送信＋JIS判定＋アクセシビリティ権限のフォールバック経路は結局維持する必要がある。ベンダーごとに異なる非公式なID命名規則（`.RomajiTyping.Japanese`/`.Roman` 等）に依存したヒューリスティックを追加することは、将来のmacOS/IMEアップデートで壊れるリスクを増やす一方、ユーザー体験上の恩恵（権限不要・キー送信不要）を全ユーザーには提供できない。
+4. 以上より、キーボードタイプ判定＋かな/英数キー合成送信によるモード強制ロジック（本ファイル「入力モード強制（JISキーボード専用）」節）は現状維持とする。将来的に主要IME側がモード別ID選択を公式にサポートする、または実際のキー入力結果までヘッドレスに検証できる手段が確立された場合は、本調査を再検討する。
+
+
 
 ### 新機能開発時
 
