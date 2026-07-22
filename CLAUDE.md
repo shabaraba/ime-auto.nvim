@@ -124,8 +124,10 @@ nvim --headless -u tests/minimal_init.lua \
 
 **プラットフォーム別実装**:
 - macOS: `swift-ime-tool.lua` 経由で Swift ツール呼び出し
-- Windows: PowerShell スクリプト実行
+- Windows: PowerShell スクリプト実行（詳細は後述）
 - Linux: `fcitx-remote` または `ibus` コマンド実行
+
+**Windows実装の詳細**: `windows-ime-tool.lua` と `powershell/ime-tool.ps1` を参照（Slot A/B方式、macOSと同様の設計）。
 
 ### 3. スロットベース状態管理
 
