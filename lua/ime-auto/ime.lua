@@ -71,30 +71,15 @@ local function ime_control_windows(action)
 end
 
 local function ime_control_linux(action)
-  local fcitx_exists = vim.fn.executable("fcitx-remote") == 1
-  local ibus_exists = vim.fn.executable("ibus") == 1
-  
-  if fcitx_exists then
-    if action == "off" then
-      return vim.fn.system("fcitx-remote -c")
-    elseif action == "on" then
-      return vim.fn.system("fcitx-remote -o")
-    elseif action == "status" then
-      local result = execute_command("fcitx-remote")
-      return result and result == "2"
-    end
-  elseif ibus_exists then
-    if action == "off" then
-      return vim.fn.system("ibus engine 'xkb:us::eng'")
-    elseif action == "on" then
-      return vim.fn.system("ibus engine 'mozc-jp'")
-    elseif action == "status" then
-      local result = execute_command("ibus engine")
-      return result and result:match("mozc") ~= nil
-    end
+  local linux_tool = require("ime-auto.linux-ime-tool")
+
+  if action == "off" then
+    return linux_tool.toggle_from_insert()
+  elseif action == "on" then
+    return linux_tool.toggle_from_normal()
+  elseif action == "status" then
+    return linux_tool.is_active()
   end
-  
-  return nil
 end
 
 function M.control(action)
@@ -195,6 +180,13 @@ function M.restore_state()
   elseif config.os == "windows" then
     local windows_tool = require("ime-auto.windows-ime-tool")
     windows_tool.toggle_from_normal()
+    return
+  end
+
+  -- Linux: Use slot-based management to restore Insert mode IME state
+  if config.os == "linux" then
+    local linux_tool = require("ime-auto.linux-ime-tool")
+    linux_tool.toggle_from_normal()
     return
   end
 

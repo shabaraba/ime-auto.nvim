@@ -88,6 +88,23 @@ Insert モードで日本語入力中
 - 半角の `kj` では動作しません（全角文字が必要）
 - 入力確定（エンター）が必要です
 
+## 🐧 Linux 対応
+
+Linux では [fcitx](https://fcitx-im.org/) と [IBus](https://github.com/ibus/ibus) をサポートしています（`fcitx-remote` が優先、なければ `ibus` を使用）。
+
+- インストール不要・設定不要で自動検出されます
+- macOS と同じスロット方式で Insert/Normal モードごとの IME 状態を記憶します
+- 状態は `~/.local/share/nvim/ime-auto/saved-ime-{a,b}.txt` に保存されます（パーミッション 0600、ディレクトリ 0700）
+
+必要なコマンド:
+```bash
+# fcitx の場合
+which fcitx-remote
+
+# ibus の場合
+which ibus
+```
+
 ### 🪟 Windows サポート（実験的）
 
 Windows では PowerShell スクリプト（`powershell/ime-tool.ps1`）を使って IME を制御します。追加のインストール作業は不要です（`ExecutionPolicy Bypass` で実行されます）。
