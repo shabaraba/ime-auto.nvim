@@ -4,24 +4,37 @@ import Foundation
 // MARK: - Debug Logging
 
 let debugLogEnabled = ProcessInfo.processInfo.environment["IME_AUTO_DEBUG"] != nil
-let debugLogPath = FileManager.default.homeDirectoryForCurrentUser
-    .appendingPathComponent(".local/share/nvim/ime-auto/debug.log")
+let nvimDataDir = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent(".local/share/nvim/ime-auto")
+let debugLogPath = nvimDataDir.appendingPathComponent("debug.log")
+
+// Ensure the data directory exists with secure permissions (owner rwx only)
+func ensureDataDirExists() {
+    guard !FileManager.default.fileExists(atPath: nvimDataDir.path) else { return }
+    try? FileManager.default.createDirectory(
+        at: nvimDataDir, withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700]
+    )
+}
 
 func debugLog(_ message: String) {
     if debugLogEnabled {
         let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
         let logMessage = "[\(timestamp)] \(message)\n"
 
+        ensureDataDirExists()
+        if !FileManager.default.fileExists(atPath: debugLogPath.path) {
+            FileManager.default.createFile(atPath: debugLogPath.path, contents: nil, attributes: [.posixPermissions: 0o600])
+        }
+
         if let handle = FileHandle(forWritingAtPath: debugLogPath.path) {
             handle.seekToEndOfFile()
             handle.write(logMessage.data(using: .utf8)!)
             handle.closeFile()
-        } else {
-            // Create file if it doesn't exist
-            try? logMessage.write(to: debugLogPath, atomically: true, encoding: .utf8)
         }
+
+        fputs(message + "\n", stderr)
     }
-    fputs(message + "\n", stderr)
 }
 
 // MARK: - Helper Functions
@@ -34,14 +47,38 @@ func inputSourceProperty(_ source: TISInputSource, _ key: CFString) -> String? {
     return Unmanaged<CFString>.fromOpaque(ptr).takeUnretainedValue() as String
 }
 
+// Check if a boolean CFTypeRef property of an input source is true
+func boolInputSourceProperty(_ source: TISInputSource, _ key: CFString) -> Bool {
+    guard let ptr = TISGetInputSourceProperty(source, key) else {
+        return false
+    }
+    return Unmanaged<CFBoolean>.fromOpaque(ptr).takeUnretainedValue() == kCFBooleanTrue
+}
+
 // Get current input source ID
 func getCurrentInputSourceID() -> String? {
     let current = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
     return inputSourceProperty(current, kTISPropertyInputSourceID)
 }
 
+// Check whether this process has Accessibility permission granted.
+// Posting CGEvents (Eisu/Kana key events) is silently dropped by the OS
+// without this permission, so callers must check before posting.
+func checkAccessibilityPermission() -> Bool {
+    let trusted = AXIsProcessTrusted()
+    if !trusted {
+        debugLog("Warning: Accessibility permission not granted. Key events will not be sent. Grant permission in System Settings > Privacy & Security > Accessibility.")
+    }
+    return trusted
+}
+
+let kVKJISEisu: CGKeyCode = 0x66
+let kVKJISKana: CGKeyCode = 0x68
+
 // Send a key event (key down + up) to force an input mode switch
 func sendKey(_ code: CGKeyCode) {
+    guard checkAccessibilityPermission() else { return }
+
     if let keyDownEvent = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true) {
         keyDownEvent.post(tap: .cghidEventTap)
     }
@@ -53,67 +90,129 @@ func sendKey(_ code: CGKeyCode) {
     usleep(50000) // 50ms for the input mode to settle
 }
 
-let kVKJISEisu: CGKeyCode = 0x66
-let kVKJISKana: CGKeyCode = 0x68
+// Check if an input source ID matches a known Kotoeri Japanese variant
+// (old and current macOS naming conventions)
+func isKotoeriJapaneseSource(_ sourceID: String) -> Bool {
+    let knownPrefixes = [
+        "com.apple.inputmethod.Kotoeri.Japanese",
+        "com.apple.inputmethod.Kotoeri.KanaTyping.Japanese",
+        "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese",
+    ]
+    return knownPrefixes.contains { sourceID.hasPrefix($0) }
+}
 
 // Detect keyboard type
-// Note: LMGetKbdType() returns different values on Apple Silicon Macs
-// Instead, we check if Eisu/Kana keys are available by checking keyboard layout
+// Primary detection uses KBGetLayoutType(), which maps LMGetKbdType() to a
+// physical layout (kKeyboardJIS/kKeyboardANSI/kKeyboardISO) and is reliable
+// across Intel and Apple Silicon Macs.
 func isJISKeyboard() -> Bool {
     let keyboardType = LMGetKbdType()
+    let layoutType = KBGetLayoutType(Int16(keyboardType))
 
-    // Known JIS keyboard types
+    if layoutType == kKeyboardJIS {
+        return true
+    } else if layoutType == kKeyboardANSI || layoutType == kKeyboardISO {
+        return false
+    } else {
+        debugLog("[isJISKeyboard] KBGetLayoutType returned unrecognized layout \(layoutType) for kbdType \(keyboardType), falling back")
+    }
+
+    // Legacy numeric fallback for older keyboard type reporting
     if keyboardType == 40 || keyboardType == 41 {
         return true
     }
 
-    // On Apple Silicon and newer Macs, check for Japanese keyboard layout
-    // by looking for Japanese-specific input sources
+    // Last-resort heuristic: presence of a Kotoeri Japanese input source is a
+    // weak signal (it does not strictly require JIS hardware), kept only for
+    // the case where the physical layout truly cannot be determined above.
     if let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] {
         for source in sources {
-            // If we have com.apple.inputmethod.Kotoeri (built-in Japanese IME),
-            // it's likely a JIS keyboard setup
-            if inputSourceProperty(source, kTISPropertyInputSourceID) == "com.apple.inputmethod.Kotoeri.Japanese" {
+            if let id = inputSourceProperty(source, kTISPropertyInputSourceID), isKotoeriJapaneseSource(id) {
                 return true
             }
         }
     }
 
-    // Fallback: assume JIS if keyboard type is not standard US (42, 43)
-    // This is not perfect but covers most cases
-    if keyboardType != 42 && keyboardType != 43 {
-        debugLog("[isJISKeyboard] Unknown keyboard type \(keyboardType), assuming JIS")
-        return true
-    }
-
+    debugLog("[isJISKeyboard] Unable to determine keyboard layout (kbdType=\(keyboardType)), defaulting to non-JIS")
     return false
 }
 
-// Check if an input source ID is a Japanese IME
-func isJapaneseIME(_ sourceID: String) -> Bool {
-    return sourceID.contains("Japanese") || sourceID.contains("Hiragana") || sourceID.contains("Katakana")
+// Get the generic input mode ID for a source (nil for plain keyboard layouts)
+func getInputModeID(_ source: TISInputSource) -> String? {
+    return inputSourceProperty(source, kTISPropertyInputModeID)
 }
 
-// Check if an input source ID is ASCII-capable (English)
-func isEnglishIME(_ sourceID: String) -> Bool {
-    return sourceID.contains("ABC") || sourceID.contains("US") || sourceID.contains("keylayout")
+// Check whether a source produces ASCII characters directly (no IME conversion needed)
+func isASCIICapable(_ source: TISInputSource) -> Bool {
+    return boolInputSourceProperty(source, kTISPropertyInputSourceIsASCIICapable)
 }
 
-// Switch to input source by ID, returns true on success
-// Also sends appropriate key event to force input mode (English/Japanese)
-func switchToInputSource(_ targetID: String, forceInputMode: Bool = true) -> Bool {
-    guard let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] else {
-        debugLog("[switchToInputSource] Failed to get input source list")
+// Check if an input source is a Japanese kana input mode (Hiragana/Katakana),
+// excluding ASCII-capable Roman/Eisu modes even when their ID contains "Japanese"
+func isJapaneseIME(_ source: TISInputSource) -> Bool {
+    if isASCIICapable(source) {
         return false
     }
+    guard let modeID = getInputModeID(source) else {
+        return false
+    }
+    return modeID.contains(".Japanese") || modeID.contains(".Katakana") || modeID.contains(".Hiragana")
+}
+
+// Check if an input source is ASCII-capable (English/Roman/Eisu)
+func isEnglishIME(_ source: TISInputSource) -> Bool {
+    return isASCIICapable(source)
+}
+
+// Check whether the currently selected input source is ASCII-capable.
+// Used for IME status reporting: any non-ASCII-capable source requires
+// composition, so it counts as "IME on" regardless of its ID string.
+func isCurrentSourceASCIICapable() -> Bool {
+    let current = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
+    return isASCIICapable(current)
+}
+
+// Check if an input source can actually be selected via TISSelectInputSource
+func isSelectableInputSource(_ source: TISInputSource) -> Bool {
+    return boolInputSourceProperty(source, kTISPropertyInputSourceIsSelectCapable)
+        && boolInputSourceProperty(source, kTISPropertyInputSourceIsEnabled)
+}
+
+// Result of attempting to switch input source
+enum InputSourceSwitchResult {
+    case success
+    case notFound
+    case notSelectable
+    case switchFailed
+}
+
+// Switch to input source by ID, returns the outcome of the attempt
+// Also sends appropriate key event to force input mode (English/Japanese)
+func switchToInputSource(_ targetID: String, forceInputMode: Bool = true) -> InputSourceSwitchResult {
+    guard let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] else {
+        debugLog("[switchToInputSource] Failed to get input source list")
+        return .notFound
+    }
+
+    var foundButNotSelectable = false
 
     for source in sources {
-        guard inputSourceProperty(source, kTISPropertyInputSourceID) == targetID else {
+        guard let id = inputSourceProperty(source, kTISPropertyInputSourceID), id == targetID else {
+            continue
+        }
+
+        guard isSelectableInputSource(source) else {
+            debugLog("[switchToInputSource] Target source \(targetID) found but not selectable (disabled or select-incapable)")
+            foundButNotSelectable = true
             continue
         }
 
         debugLog("[switchToInputSource] Found target source \(targetID), calling TISSelectInputSource")
-        TISSelectInputSource(source)
+        let status = TISSelectInputSource(source)
+        if status != noErr {
+            debugLog("[switchToInputSource] TISSelectInputSource failed with OSStatus \(status) for \(targetID)")
+            return .switchFailed
+        }
 
         // Wait for IME switch to complete (TISSelectInputSource is async)
         usleep(50000) // 50ms initial wait
@@ -140,15 +239,15 @@ func switchToInputSource(_ targetID: String, forceInputMode: Bool = true) -> Boo
 
         if !switchSucceeded {
             debugLog("[switchToInputSource] FAILED after all retries (target: \(targetID), current: \(getCurrentInputSourceID() ?? "nil"))")
-            return false
+            return .switchFailed
         }
 
         // Force input mode by sending key event (JIS keyboard only)
         if forceInputMode && isJISKeyboard() {
-            if isJapaneseIME(targetID) {
+            if isJapaneseIME(source) {
                 debugLog("[switchToInputSource] JIS keyboard detected - Sending Kana key to force Hiragana mode")
                 sendKey(kVKJISKana)
-            } else if isEnglishIME(targetID) {
+            } else if isEnglishIME(source) {
                 debugLog("[switchToInputSource] JIS keyboard detected - Sending Eisu key to force English mode")
                 sendKey(kVKJISEisu)
             }
@@ -156,19 +255,48 @@ func switchToInputSource(_ targetID: String, forceInputMode: Bool = true) -> Boo
             debugLog("[switchToInputSource] Non-JIS keyboard detected - Skipping key event (not needed)")
         }
 
-        return true
+        return .success
     }
 
+    if foundButNotSelectable {
+        return .notSelectable
+    }
     debugLog("[switchToInputSource] Target source \(targetID) not found in available sources")
-    return false
+    return .notFound
+}
+
+// Build a user-facing error message describing why a switch failed
+func switchFailureMessage(_ result: InputSourceSwitchResult, targetID: String) -> String {
+    switch result {
+    case .success:
+        return ""
+    case .notFound:
+        return "Error: Input source not found: \(targetID)\n"
+    case .notSelectable:
+        return "Error: Input source found but cannot be selected (disabled or select-incapable): \(targetID)\n"
+    case .switchFailed:
+        return "Error: Failed to switch to input source: \(targetID)\n"
+    }
 }
 
 // Write IME ID to slot with secure permissions
 func writeToSlot(_ id: String, slot: String) throws {
     let slotFile = getSaveFilePath(slot: slot)
-    try id.write(to: slotFile, atomically: true, encoding: .utf8)
-    // Set secure file permissions (owner read/write only)
-    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: slotFile.path)
+    let path = slotFile.path
+
+    // Create the file with secure permissions before writing, so it never
+    // exists with the default (umask-dependent) permissions.
+    if !FileManager.default.fileExists(atPath: path) {
+        FileManager.default.createFile(atPath: path, contents: nil, attributes: [.posixPermissions: 0o600])
+    }
+
+    let handle = try FileHandle(forWritingTo: slotFile)
+    defer { handle.closeFile() }
+    handle.truncateFile(atOffset: 0)
+    handle.write(id.data(using: .utf8) ?? Data())
+
+    // Re-assert permissions in case the file already existed with different ones
+    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
 }
 
 // Read IME ID from slot
@@ -189,20 +317,10 @@ func getSaveFilePath(slot: String = "current") -> URL {
         exit(1)
     }
 
-    let homeDir = FileManager.default.homeDirectoryForCurrentUser
-    let nvimDataDir = homeDir.appendingPathComponent(".local/share/nvim/ime-auto")
-
-    // Create directory if it doesn't exist with secure permissions
-    if !FileManager.default.fileExists(atPath: nvimDataDir.path) {
-        do {
-            let attributes: [FileAttributeKey: Any] = [
-                .posixPermissions: 0o700  // Owner read/write/execute only
-            ]
-            try FileManager.default.createDirectory(at: nvimDataDir, withIntermediateDirectories: true, attributes: attributes)
-        } catch {
-            debugLog("Error: Failed to create directory \(nvimDataDir.path): \(error)\n")
-            exit(1)
-        }
+    ensureDataDirExists()
+    guard FileManager.default.fileExists(atPath: nvimDataDir.path) else {
+        debugLog("Error: Failed to create directory \(nvimDataDir.path)\n")
+        exit(1)
     }
 
     return nvimDataDir.appendingPathComponent("saved-ime-\(slot).txt")
@@ -236,12 +354,13 @@ func toggle(saveTo: String, restoreFrom: String, fallback: String?) -> Never {
 
     debugLog("[DEBUG] toggle(saveTo: \(saveTo)): target=\(targetID)\n")
 
-    if switchToInputSource(targetID) {
+    let switchResult = switchToInputSource(targetID)
+    if switchResult == .success {
         let actualID = getCurrentInputSourceID()
         debugLog("[DEBUG] toggle(saveTo: \(saveTo)): switched to \(actualID ?? "nil")\n")
         exit(0)
     } else {
-        debugLog("Error: Input source not found: \(targetID)\n")
+        debugLog(switchFailureMessage(switchResult, targetID: targetID))
         exit(1)
     }
 }
@@ -272,7 +391,12 @@ guard CommandLine.arguments.count > 1 else {
 
 let command = CommandLine.arguments[1]
 
-if command == "list" {
+if command == "keyboard-info" {
+    // Diagnostic: print keyboard layout detection details for manual verification
+    let keyboardType = LMGetKbdType()
+    let layoutType = KBGetLayoutType(Int16(keyboardType))
+    print("kbdType=\(keyboardType) layoutType=\(layoutType) isJISKeyboard=\(isJISKeyboard())")
+} else if command == "list" {
     // List all selectable input sources
     if let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] {
         for source in sources {
@@ -286,6 +410,11 @@ if command == "list" {
             }
         }
     }
+} else if command == "status" {
+    // Report whether the current input source is engaged in IME (non-ASCII) mode.
+    // Determined via kTISPropertyInputSourceIsASCIICapable, not ID string matching.
+    print(isCurrentSourceASCIICapable() ? "off" : "on")
+    exit(0)
 } else if command == "toggle-from-insert" {
     // Toggle from Insert mode: save current to slot A, switch to slot B.
     // No fallback: if slot B is empty, stay on the current input source.
@@ -331,10 +460,11 @@ if command == "list" {
         exit(0)
     }
 
-    if switchToInputSource(target) {
+    let switchResult = switchToInputSource(target)
+    if switchResult == .success {
         exit(0)
     } else {
-        debugLog("Error: Input source not found: \(target)\n")
+        debugLog(switchFailureMessage(switchResult, targetID: target))
         exit(1)
     }
 } else if command == "save-insert" {
@@ -347,10 +477,11 @@ if command == "list" {
 
 } else {
     // Legacy: Switch to specified input source
-    if switchToInputSource(command) {
+    let switchResult = switchToInputSource(command)
+    if switchResult == .success {
         exit(0)
     } else {
-        debugLog("Error: Input source not found: \(command)\n")
+        debugLog(switchFailureMessage(switchResult, targetID: command))
         exit(1)
     }
 }
