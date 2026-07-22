@@ -57,42 +57,40 @@ describe("Test 04: IME status detection (TIS-based)", function()
     before_each(function()
       swift_tool = require("ime-auto.swift-ime-tool")
       swift_tool.ensure_compiled()
-      original_system = vim.fn.system
+      original_system = vim.system
     end)
 
     after_each(function()
-      vim.fn.system = original_system
+      vim.system = original_system
     end)
 
-    it("returns true for 'on' output", function()
-      vim.fn.system = function(_)
-        original_system("true")
-        return "on\n"
+    local function stub_system(stdout, code)
+      vim.system = function(_, _)
+        return {
+          wait = function()
+            return { stdout = stdout, code = code }
+          end,
+        }
       end
+    end
+
+    it("returns true for 'on' output", function()
+      stub_system("on\n", 0)
       assert.is_true(swift_tool.get_status())
     end)
 
     it("returns false for 'off' output", function()
-      vim.fn.system = function(_)
-        original_system("true")
-        return "off\n"
-      end
+      stub_system("off\n", 0)
       assert.is_false(swift_tool.get_status())
     end)
 
     it("returns nil for unrecognized output", function()
-      vim.fn.system = function(_)
-        original_system("true")
-        return "garbage\n"
-      end
+      stub_system("garbage\n", 0)
       assert.is_nil(swift_tool.get_status())
     end)
 
     it("returns nil when the underlying command fails", function()
-      vim.fn.system = function(_)
-        original_system("false")
-        return ""
-      end
+      stub_system("", 1)
       assert.is_nil(swift_tool.get_status())
     end)
   end)

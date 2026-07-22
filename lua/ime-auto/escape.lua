@@ -1,5 +1,7 @@
 local M = {}
 
+M.enabled = true
+
 local pending_char = nil
 local timer = nil
 
@@ -18,19 +20,22 @@ local function handle_escape_sequence()
   clear_pending()
   
   local line = vim.api.nvim_get_current_line()
-  local col = vim.api.nvim_win_get_cursor(0)[2]
-  
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local row, col = cursor[1], cursor[2]
+
   local escape_seq = config.escape_sequence
   local seq_len = vim.fn.strchars(escape_seq)
-  
+
   if col >= seq_len then
     local before_cursor = vim.fn.strpart(line, 0, col)
     local last_chars = vim.fn.strcharpart(before_cursor, vim.fn.strchars(before_cursor) - seq_len)
-    
+
     if last_chars == escape_seq then
-      local new_line = vim.fn.strpart(line, 0, col - vim.fn.strlen(escape_seq)) .. vim.fn.strpart(line, col)
+      local new_col = col - vim.fn.strlen(escape_seq)
+      local new_line = vim.fn.strpart(line, 0, new_col) .. vim.fn.strpart(line, col)
       vim.api.nvim_set_current_line(new_line)
-      
+      vim.api.nvim_win_set_cursor(0, { row, new_col })
+
       ime.save_state()
       
       vim.cmd("stopinsert")
@@ -47,9 +52,13 @@ local function handle_escape_sequence()
 end
 
 function M.on_insert_char_pre()
+  if not M.enabled then
+    return
+  end
+
   local char = vim.v.char
   local config = require("ime-auto.config").get()
-  
+
   if not char or char == "" then
     return
   end

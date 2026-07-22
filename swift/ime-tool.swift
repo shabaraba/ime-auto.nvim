@@ -20,8 +20,9 @@ func debugLog(_ message: String) {
             // Create file if it doesn't exist
             try? logMessage.write(to: debugLogPath, atomically: true, encoding: .utf8)
         }
+
+        fputs(message + "\n", stderr)
     }
-    fputs(message + "\n", stderr)
 }
 
 // MARK: - Helper Functions
@@ -35,8 +36,21 @@ func getCurrentInputSourceID() -> String? {
     return Unmanaged<CFString>.fromOpaque(sourceID).takeUnretainedValue() as String
 }
 
+// Check whether this process has Accessibility permission granted.
+// Posting CGEvents (Eisu/Kana key events) is silently dropped by the OS
+// without this permission, so callers must check before posting.
+func checkAccessibilityPermission() -> Bool {
+    let trusted = AXIsProcessTrusted()
+    if !trusted {
+        debugLog("Warning: Accessibility permission not granted. Key events will not be sent. Grant permission in System Settings > Privacy & Security > Accessibility.")
+    }
+    return trusted
+}
+
 // Send Eisu (英数) key to force English input mode
 func sendEisuKey() {
+    guard checkAccessibilityPermission() else { return }
+
     let keyCode: CGKeyCode = 0x66  // kVK_JIS_Eisu
 
     if let keyDownEvent = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) {
@@ -52,6 +66,8 @@ func sendEisuKey() {
 
 // Send Kana (かな) key to force Hiragana input mode
 func sendKanaKey() {
+    guard checkAccessibilityPermission() else { return }
+
     let keyCode: CGKeyCode = 0x68  // kVK_JIS_Kana
 
     if let keyDownEvent = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) {
@@ -65,54 +81,92 @@ func sendKanaKey() {
     usleep(50000) // 50ms for the input mode to settle
 }
 
+// Check if an input source ID matches a known Kotoeri Japanese variant
+// (old and current macOS naming conventions)
+func isKotoeriJapaneseSource(_ sourceID: String) -> Bool {
+    let knownPrefixes = [
+        "com.apple.inputmethod.Kotoeri.Japanese",
+        "com.apple.inputmethod.Kotoeri.KanaTyping.Japanese",
+        "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese",
+    ]
+    return knownPrefixes.contains { sourceID.hasPrefix($0) }
+}
+
 // Detect keyboard type
-// Note: LMGetKbdType() returns different values on Apple Silicon Macs
-// Instead, we check if Eisu/Kana keys are available by checking keyboard layout
+// Primary detection uses KBGetLayoutType(), which maps LMGetKbdType() to a
+// physical layout (kKeyboardJIS/kKeyboardANSI/kKeyboardISO) and is reliable
+// across Intel and Apple Silicon Macs.
 func isJISKeyboard() -> Bool {
     let keyboardType = LMGetKbdType()
+    let layoutType = KBGetLayoutType(Int16(keyboardType))
 
-    // Known JIS keyboard types
+    if layoutType == kKeyboardJIS {
+        return true
+    } else if layoutType == kKeyboardANSI || layoutType == kKeyboardISO {
+        return false
+    } else {
+        debugLog("[isJISKeyboard] KBGetLayoutType returned unrecognized layout \(layoutType) for kbdType \(keyboardType), falling back")
+    }
+
+    // Legacy numeric fallback for older keyboard type reporting
     if keyboardType == 40 || keyboardType == 41 {
         return true
     }
 
-    // On Apple Silicon and newer Macs, check for Japanese keyboard layout
-    // by looking for Japanese-specific input sources
+    // Last-resort heuristic: presence of a Kotoeri Japanese input source is a
+    // weak signal (it does not strictly require JIS hardware), kept only for
+    // the case where the physical layout truly cannot be determined above.
     if let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] {
         for source in sources {
             if let idPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) {
                 let id = Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String
-                // If we have com.apple.inputmethod.Kotoeri (built-in Japanese IME),
-                // it's likely a JIS keyboard setup
-                if id == "com.apple.inputmethod.Kotoeri.Japanese" {
+                if isKotoeriJapaneseSource(id) {
                     return true
                 }
             }
         }
     }
 
-    // Fallback: assume JIS if keyboard type is not standard US (42, 43)
-    // This is not perfect but covers most cases
-    if keyboardType != 42 && keyboardType != 43 {
-        debugLog("[isJISKeyboard] Unknown keyboard type \(keyboardType), assuming JIS")
-        return true
-    }
-
+    debugLog("[isJISKeyboard] Unable to determine keyboard layout (kbdType=\(keyboardType)), defaulting to non-JIS")
     return false
 }
 
-// Check whether a given input source can directly produce ASCII (English mode).
-// Uses the official TIS property instead of matching substrings in the source ID,
-// since a single IME (e.g. Google Japanese Input) exposes both an ASCII-capable
-// mode and a Japanese-composing mode as distinct input sources.
-func isASCIICapable(_ source: TISInputSource) -> Bool {
-    guard let ptr = TISGetInputSourceProperty(source, kTISPropertyInputSourceIsASCIICapable) else {
-        return true
+// Get the generic input mode ID for a source (nil for plain keyboard layouts)
+func getInputModeID(_ source: TISInputSource) -> String? {
+    guard let modeIDPtr = TISGetInputSourceProperty(source, kTISPropertyInputModeID) else {
+        return nil
     }
-    return CFBooleanGetValue(Unmanaged<CFBoolean>.fromOpaque(ptr).takeUnretainedValue())
+    return Unmanaged<CFString>.fromOpaque(modeIDPtr).takeUnretainedValue() as String
 }
 
-// Check whether the currently selected input source is ASCII-capable
+// Check whether a source produces ASCII characters directly (no IME conversion needed)
+func isASCIICapable(_ source: TISInputSource) -> Bool {
+    guard let capablePtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceIsASCIICapable) else {
+        return false
+    }
+    return Unmanaged<CFBoolean>.fromOpaque(capablePtr).takeUnretainedValue() == kCFBooleanTrue
+}
+
+// Check if an input source is a Japanese kana input mode (Hiragana/Katakana),
+// excluding ASCII-capable Roman/Eisu modes even when their ID contains "Japanese"
+func isJapaneseIME(_ source: TISInputSource) -> Bool {
+    if isASCIICapable(source) {
+        return false
+    }
+    guard let modeID = getInputModeID(source) else {
+        return false
+    }
+    return modeID.contains(".Japanese") || modeID.contains(".Katakana") || modeID.contains(".Hiragana")
+}
+
+// Check if an input source is ASCII-capable (English/Roman/Eisu)
+func isEnglishIME(_ source: TISInputSource) -> Bool {
+    return isASCIICapable(source)
+}
+
+// Check whether the currently selected input source is ASCII-capable.
+// Used for IME status reporting: any non-ASCII-capable source requires
+// composition, so it counts as "IME on" regardless of its ID string.
 func isCurrentSourceASCIICapable() -> Bool {
     let current = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
     return isASCIICapable(current)
@@ -163,12 +217,12 @@ func switchToInputSource(_ targetID: String, forceInputMode: Bool = true) -> Boo
 
                 // Force input mode by sending key event (JIS keyboard only)
                 if forceInputMode && isJISKeyboard() {
-                    if isASCIICapable(source) {
-                        debugLog("[switchToInputSource] JIS keyboard detected - Sending Eisu key to force English mode")
-                        sendEisuKey()
-                    } else {
+                    if isJapaneseIME(source) {
                         debugLog("[switchToInputSource] JIS keyboard detected - Sending Kana key to force Hiragana mode")
                         sendKanaKey()
+                    } else if isEnglishIME(source) {
+                        debugLog("[switchToInputSource] JIS keyboard detected - Sending Eisu key to force English mode")
+                        sendEisuKey()
                     }
                 } else if forceInputMode && !isJISKeyboard() {
                     debugLog("[switchToInputSource] Non-JIS keyboard detected - Skipping key event (not needed)")
@@ -239,7 +293,12 @@ guard CommandLine.arguments.count > 1 else {
 
 let command = CommandLine.arguments[1]
 
-if command == "list" {
+if command == "keyboard-info" {
+    // Diagnostic: print keyboard layout detection details for manual verification
+    let keyboardType = LMGetKbdType()
+    let layoutType = KBGetLayoutType(Int16(keyboardType))
+    print("kbdType=\(keyboardType) layoutType=\(layoutType) isJISKeyboard=\(isJISKeyboard())")
+} else if command == "list" {
     // List all selectable input sources
     if let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] {
         for source in sources {
