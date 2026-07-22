@@ -124,8 +124,10 @@ nvim --headless -u tests/minimal_init.lua \
 
 **プラットフォーム別実装**:
 - macOS: `swift-ime-tool.lua` 経由で Swift ツール呼び出し
-- Windows: PowerShell スクリプト実行
+- Windows: PowerShell スクリプト実行（詳細は後述）
 - Linux: `fcitx-remote` または `ibus` コマンド実行
+
+**Windows実装の詳細**: `windows-ime-tool.lua` と `powershell/ime-tool.ps1` を参照（Slot A/B方式、macOSと同様の設計）。
 
 ### 3. スロットベース状態管理
 
@@ -205,6 +207,26 @@ if isJISKeyboard() {
 **キーボードタイプ別の動作**:
 - **JISキーボード** (type 40, 41): Input Source切り替え + 入力モード強制
 - **USキーボード** (type 42, 43, その他): Input Source切り替えのみ（入力モード強制は不要）
+
+**アクセシビリティ権限（macOS必須）**:
+`sendKanaKey()`/`sendEisuKey()` が送信する `CGEvent` は、Neovim（またはターミナルアプリ）に
+アクセシビリティ権限が付与されていないと OS に黙って破棄される。Input Source ID の切り替え自体は
+成功するため、権限がない環境では失敗が握りつぶされ「メニューバーは日本語なのに英字しか打てない」
+問題が再発する。この問題を検知できるよう、キー送信前に `AXIsProcessTrusted()` を確認し、
+権限がない場合はキー送信をスキップして stderr（および `debug.log`）に警告を出力する：
+
+```swift
+func checkAccessibilityPermission() -> Bool {
+    let trusted = AXIsProcessTrusted()
+    if !trusted {
+        debugLog("Warning: Accessibility permission not granted. ...")
+    }
+    return trusted
+}
+```
+
+権限は システム設定 > プライバシーとセキュリティ > アクセシビリティ で
+Neovim/ターミナルアプリを許可することで付与できる。
 
 **パフォーマンス**:
 - 通常ケース: 50ms（1回の待機で完了）
@@ -326,6 +348,14 @@ Kotoeri（日本語IME）のID一致判定も、現行macOSのID命名（`Romaji
 # 出力例: kbdType=93 layoutType=1246319392 isJISKeyboard=true
 ```
 USキーボードでは `isJISKeyboard=false` となり、モード切替時にキーイベントが送出されないことを確認する。
+
+**問題**: JISキーボードで入力モードが強制切り替えされない（同上の症状が権限起因で再発する）
+**原因**: `sendKanaKey`/`sendEisuKey` が送信する CGEvent は、Neovim（またはターミナルアプリ）にアクセシビリティ権限が付与されていないと OS に黙って破棄される。Input Source ID の切り替え自体は成功しているため `switchToInputSource` は `true`/exit 0 を返し、失敗が握りつぶされる
+**解決済み**: `sendKanaKey`/`sendEisuKey` の実行前に `AXIsProcessTrusted()` を確認し、権限がない場合はキー送信をスキップして stderr（および `debug.log`）に警告を出力するようにした
+**対処法**:
+1. システム設定 > プライバシーとセキュリティ > アクセシビリティ で Neovim/ターミナルアプリを許可
+2. 権限変更後は Neovim（または Swift ツールを起動しているプロセス）を再起動
+3. `~/.local/share/nvim/ime-auto/debug.log` に `Warning: Accessibility permission not granted...` が出力されていないか確認
 
 **問題**: エスケープシーケンスが動作しない
 **解決**:
