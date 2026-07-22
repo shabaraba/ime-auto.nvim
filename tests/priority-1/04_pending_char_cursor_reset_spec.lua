@@ -14,9 +14,14 @@ local function type_char(char)
   vim.v.char = char
   escape.on_insert_char_pre()
 
-  local new_line = vim.fn.strpart(line, 0, cursor[2]) .. char .. vim.fn.strpart(line, cursor[2])
-  vim.api.nvim_buf_set_lines(0, cursor[1] - 1, cursor[1], false, { new_line })
-  vim.api.nvim_win_set_cursor(0, { cursor[1], cursor[2] + vim.fn.strlen(char) })
+  -- Neovim only inserts the character if InsertCharPre didn't cancel it
+  -- (v:char == ""); a full match cancels the final character to shrink
+  -- the race window, so it never actually lands in the buffer.
+  if vim.v.char ~= "" then
+    local new_line = vim.fn.strpart(line, 0, cursor[2]) .. char .. vim.fn.strpart(line, cursor[2])
+    vim.api.nvim_buf_set_lines(0, cursor[1] - 1, cursor[1], false, { new_line })
+    vim.api.nvim_win_set_cursor(0, { cursor[1], cursor[2] + vim.fn.strlen(char) })
+  end
 
   escape.on_cursor_moved_i()
 end

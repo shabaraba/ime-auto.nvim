@@ -25,57 +25,55 @@ local function is_at_expected_pos()
   return cursor[1] == match_start_pos[1] and cursor[2] == match_start_pos[2] + matched_bytes
 end
 
-local function handle_escape_sequence()
-  local config = require("ime-auto.config").get()
-  local ime = require("ime-auto.ime")
+--- Removes the already-inserted prefix of the escape sequence and finalizes
+--- the mode switch. Runs on vim.schedule since buffer edits are disallowed
+--- synchronously inside InsertCharPre (E565). `context` snapshots the
+--- buffer/cursor/changedtick at detection time so that any input arriving
+--- before this callback runs (IME multi-char commit, macro playback, ...)
+--- is detected as a race instead of silently corrupting the buffer.
+local function finalize_escape_sequence(context)
+  local utils = require("ime-auto.utils")
 
-  clear_pending()
-
-  local line = vim.api.nvim_get_current_line()
-  local cursor = vim.api.nvim_win_get_cursor(0)
-  local row, col = cursor[1], cursor[2]
-
-  local escape_seq = config.escape_sequence
-  local seq_len = vim.fn.strchars(escape_seq)
-
-  if col >= seq_len then
-    local before_cursor = vim.fn.strpart(line, 0, col)
-    local last_chars = vim.fn.strcharpart(before_cursor, vim.fn.strchars(before_cursor) - seq_len)
-
-    if last_chars == escape_seq then
-      local new_col = col - vim.fn.strlen(escape_seq)
-      local new_line = vim.fn.strpart(line, 0, new_col) .. vim.fn.strpart(line, col)
-      vim.api.nvim_set_current_line(new_line)
-      vim.api.nvim_win_set_cursor(0, { row, new_col })
-
-      ime.save_state()
-
-      vim.cmd("stopinsert")
-
-      if config.debug then
-        vim.notify("[ime-auto] Escape sequence detected", vim.log.levels.DEBUG)
-      end
-
-      return true
-    end
+  if vim.api.nvim_get_current_buf() ~= context.bufnr then
+    utils.notify("Escape sequence aborted: buffer changed before removal", vim.log.levels.WARN)
+    return false
   end
 
-  return false
+  if vim.api.nvim_buf_get_changedtick(context.bufnr) ~= context.changedtick then
+    utils.notify(
+      "Escape sequence aborted: additional input arrived before removal (possible race)",
+      vim.log.levels.WARN
+    )
+    return false
+  end
+
+  local line = vim.api.nvim_buf_get_lines(context.bufnr, context.row, context.row + 1, false)[1] or ""
+  local col = context.col
+  local prefix_len = vim.fn.strlen(context.already_inserted)
+
+  if prefix_len > 0
+      and (col < prefix_len or vim.fn.strpart(line, col - prefix_len, prefix_len) ~= context.already_inserted) then
+    utils.notify("Escape sequence aborted: unexpected buffer content before removal", vim.log.levels.WARN)
+    return false
+  end
+
+  local new_col = col - prefix_len
+  local new_line = vim.fn.strpart(line, 0, new_col) .. vim.fn.strpart(line, col)
+  vim.api.nvim_buf_set_lines(context.bufnr, context.row, context.row + 1, false, { new_line })
+  vim.api.nvim_win_set_cursor(0, { context.row + 1, new_col })
+
+  require("ime-auto.ime").save_state()
+  vim.cmd("stopinsert")
+
+  utils.notify("Escape sequence detected", vim.log.levels.DEBUG)
+
+  return true
 end
 
-local function advance_match(count, seq_len, escape_timeout)
+local function advance_match(count, escape_timeout)
   if timer then
     vim.fn.timer_stop(timer)
     timer = nil
-  end
-
-  if count >= seq_len then
-    matched_count = 0
-    match_start_pos = nil
-    vim.schedule(function()
-      handle_escape_sequence()
-    end)
-    return
   end
 
   if count == 1 then
@@ -114,11 +112,33 @@ function M.on_insert_char_pre()
 
   local expected_char = vim.fn.strcharpart(escape_seq, matched_count, 1)
   local first_char = vim.fn.strcharpart(escape_seq, 0, 1)
+  local at_valid_pos = matched_count == 0 or is_at_expected_pos()
 
-  if char == expected_char and (matched_count == 0 or is_at_expected_pos()) then
-    advance_match(matched_count + 1, seq_len, config.escape_timeout)
+  if char == expected_char and at_valid_pos and matched_count + 1 >= seq_len then
+    -- Full match. Cancel insertion of this final character immediately so
+    -- the escape sequence never fully lands in the buffer; only the
+    -- already-inserted prefix (matched_count chars) needs a deferred
+    -- removal, shrinking the race window down to "one verification".
+    local bufnr = vim.api.nvim_get_current_buf()
+    local cursor = vim.api.nvim_win_get_cursor(0)
+    local context = {
+      bufnr = bufnr,
+      changedtick = vim.api.nvim_buf_get_changedtick(bufnr),
+      row = cursor[1] - 1,
+      col = cursor[2],
+      already_inserted = vim.fn.strcharpart(escape_seq, 0, matched_count),
+    }
+
+    clear_pending()
+    vim.v.char = ""
+
+    vim.schedule(function()
+      finalize_escape_sequence(context)
+    end)
+  elseif char == expected_char and at_valid_pos then
+    advance_match(matched_count + 1, config.escape_timeout)
   elseif char == first_char then
-    advance_match(1, seq_len, config.escape_timeout)
+    advance_match(1, config.escape_timeout)
   else
     clear_pending()
   end

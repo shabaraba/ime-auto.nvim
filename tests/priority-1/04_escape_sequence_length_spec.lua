@@ -7,15 +7,20 @@ local ime = require("ime-auto.ime")
 
 -- Simulates InsertCharPre firing for each char, then the actual buffer
 -- insertion that Neovim would normally perform right after the event.
+-- Neovim only inserts the character if InsertCharPre didn't cancel it
+-- (v:char == ""); a full match cancels the final character to shrink
+-- the race window, so it never actually lands in the buffer.
 local function type_chars(chars)
   for _, char in ipairs(chars) do
     vim.v.char = char
     escape.on_insert_char_pre()
 
-    local line = vim.api.nvim_get_current_line()
-    local new_line = line .. char
-    vim.api.nvim_set_current_line(new_line)
-    vim.api.nvim_win_set_cursor(0, { 1, vim.fn.strlen(new_line) })
+    if vim.v.char ~= "" then
+      local line = vim.api.nvim_get_current_line()
+      local new_line = line .. char
+      vim.api.nvim_set_current_line(new_line)
+      vim.api.nvim_win_set_cursor(0, { 1, vim.fn.strlen(new_line) })
+    end
   end
 end
 

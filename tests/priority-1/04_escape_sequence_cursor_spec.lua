@@ -45,15 +45,22 @@ describe("Test 04: Cursor position after escape sequence deletion", function()
     vim.v.char = "ｋ"
     escape.on_insert_char_pre()
 
-    vim.api.nvim_buf_set_lines(0, 0, -1, false, { seq_first_byte_line })
-    vim.api.nvim_win_set_cursor(0, { 1, col_after_first })
+    -- Neovim only inserts the character if InsertCharPre didn't cancel it
+    -- (v:char == ""); a full match cancels the final character to shrink
+    -- the race window, so it never actually lands in the buffer.
+    if vim.v.char ~= "" then
+      vim.api.nvim_buf_set_lines(0, 0, -1, false, { seq_first_byte_line })
+      vim.api.nvim_win_set_cursor(0, { 1, col_after_first })
+    end
 
     vim.v.char = "ｊ"
     escape.on_insert_char_pre()
 
-    local final_line = line_before_seq .. "ｋｊ" .. line_after_seq
-    vim.api.nvim_buf_set_lines(0, 0, -1, false, { final_line })
-    vim.api.nvim_win_set_cursor(0, { 1, vim.fn.strlen(line_before_seq .. "ｋｊ") })
+    if vim.v.char ~= "" then
+      local final_line = line_before_seq .. "ｋｊ" .. line_after_seq
+      vim.api.nvim_buf_set_lines(0, 0, -1, false, { final_line })
+      vim.api.nvim_win_set_cursor(0, { 1, vim.fn.strlen(line_before_seq .. "ｋｊ") })
+    end
 
     vim.wait(50)
   end
