@@ -6,6 +6,27 @@ local utils = require("ime-auto.utils")
 
 local swift_bin_path = nil
 
+-- Sanitize a raw identifier to the character set accepted by the Swift tool
+-- (alphanumeric, dot, dash, underscore). Exposed for testability; pure
+-- function with no side effects.
+function M.sanitize_instance_id(raw)
+  local id = (raw or ""):gsub("[^%w%.%-_]", "_")
+  if id == "" then
+    id = tostring(vim.fn.getpid())
+  end
+  return id
+end
+
+-- Unique identifier for this Neovim instance, used to isolate slot files
+-- between concurrently running instances (see issue #31)
+local function get_instance_id()
+  local raw = vim.v.servername
+  if not raw or raw == "" then
+    raw = tostring(vim.fn.getpid())
+  end
+  return M.sanitize_instance_id(raw)
+end
+
 -- Enable debug logging if ime-auto debug is enabled
 local function build_env()
   local config = require("ime-auto.config").get()
@@ -15,10 +36,13 @@ local function build_env()
   return nil
 end
 
+-- args: nil, or a list of positional arguments passed to the Swift binary
 local function build_argv(args)
   local argv = { swift_bin_path }
   if args then
-    table.insert(argv, args)
+    for _, arg in ipairs(args) do
+      table.insert(argv, arg)
+    end
   end
   return argv
 end
@@ -120,7 +144,7 @@ end
 -- or nil if the status could not be determined. Trusts the Swift tool's
 -- TIS-property-based judgment rather than re-deriving it from the ID string.
 function M.get_status()
-  local result, success = run_swift_command("status")
+  local result, success = run_swift_command({ "status" })
   if not success or not result then
     return nil
   end
@@ -135,7 +159,7 @@ function M.get_status()
 end
 
 function M.list()
-  local result, success = run_swift_command("list")
+  local result, success = run_swift_command({ "list" })
   if not success or not result then
     return nil
   end
@@ -152,7 +176,7 @@ end
 -- Fire-and-forget: the InsertLeave path doesn't need to wait for the result,
 -- so switching happens asynchronously to avoid blocking the editor.
 function M.toggle_from_insert(callback)
-  run_swift_command_async("toggle-from-insert", function(_, success)
+  run_swift_command_async({ "toggle-from-insert", get_instance_id() }, function(_, success)
     if callback then
       callback(success)
     end
@@ -162,7 +186,7 @@ end
 -- Fire-and-forget: the InsertEnter path doesn't need to wait for the result,
 -- so switching happens asynchronously to avoid blocking the editor.
 function M.toggle_from_normal(callback)
-  run_swift_command_async("toggle-from-normal", function(_, success)
+  run_swift_command_async({ "toggle-from-normal", get_instance_id() }, function(_, success)
     if callback then
       callback(success)
     end

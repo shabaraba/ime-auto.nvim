@@ -280,8 +280,8 @@ func switchFailureMessage(_ result: InputSourceSwitchResult, targetID: String) -
 }
 
 // Write IME ID to slot with secure permissions
-func writeToSlot(_ id: String, slot: String) throws {
-    let slotFile = getSaveFilePath(slot: slot)
+func writeToSlot(_ id: String, slot: String, instanceID: String? = nil) throws {
+    let slotFile = getSaveFilePath(slot: slot, instanceID: instanceID)
     let path = slotFile.path
 
     // Create the file with secure permissions before writing, so it never
@@ -300,15 +300,17 @@ func writeToSlot(_ id: String, slot: String) throws {
 }
 
 // Read IME ID from slot
-func readFromSlot(_ slot: String) -> String? {
-    let slotFile = getSaveFilePath(slot: slot)
+func readFromSlot(_ slot: String, instanceID: String? = nil) -> String? {
+    let slotFile = getSaveFilePath(slot: slot, instanceID: instanceID)
     return try? String(contentsOf: slotFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
 // MARK: - File Path Management
 
-// Get save file paths and ensure directory exists
-func getSaveFilePath(slot: String = "current") -> URL {
+// Get save file paths and ensure directory exists.
+// instanceID isolates slot files per Neovim instance (see issue #31) to
+// prevent concurrent Neovim instances from overwriting each other's IME state.
+func getSaveFilePath(slot: String = "current", instanceID: String? = nil) -> URL {
     // Validate slot parameter to prevent path traversal
     let validSlotPattern = "^[a-zA-Z0-9_-]+$"
     guard let regex = try? NSRegularExpression(pattern: validSlotPattern),
@@ -317,13 +319,27 @@ func getSaveFilePath(slot: String = "current") -> URL {
         exit(1)
     }
 
+    var fileName = "saved-ime-\(slot)"
+    if let instanceID = instanceID, !instanceID.isEmpty {
+        // Validate instance ID to prevent path traversal (defense in depth;
+        // the Lua caller already sanitizes this value)
+        let validInstancePattern = "^[a-zA-Z0-9_.-]+$"
+        guard let instanceRegex = try? NSRegularExpression(pattern: validInstancePattern),
+              instanceRegex.firstMatch(in: instanceID, range: NSRange(instanceID.startIndex..., in: instanceID)) != nil else {
+            debugLog("Error: Invalid instance ID. Only alphanumeric, dot, underscore, and dash allowed.\n")
+            exit(1)
+        }
+        fileName += "-\(instanceID)"
+    }
+    fileName += ".txt"
+
     ensureDataDirExists()
     guard FileManager.default.fileExists(atPath: nvimDataDir.path) else {
         debugLog("Error: Failed to create directory \(nvimDataDir.path)\n")
         exit(1)
     }
 
-    return nvimDataDir.appendingPathComponent("saved-ime-\(slot).txt")
+    return nvimDataDir.appendingPathComponent(fileName)
 }
 
 // MARK: - Commands
@@ -331,7 +347,7 @@ func getSaveFilePath(slot: String = "current") -> URL {
 // Save current input source to slot, then switch to the input source saved in
 // restoreFrom. If restoreFrom has no saved value, fallback is used; if fallback
 // is also nil, the current input source is left unchanged.
-func toggle(saveTo: String, restoreFrom: String, fallback: String?) -> Never {
+func toggle(saveTo: String, restoreFrom: String, fallback: String?, instanceID: String?) -> Never {
     guard let currentID = getCurrentInputSourceID() else {
         debugLog("Error: Failed to get current input source\n")
         exit(1)
@@ -340,14 +356,14 @@ func toggle(saveTo: String, restoreFrom: String, fallback: String?) -> Never {
     debugLog("[DEBUG] toggle(saveTo: \(saveTo)): current=\(currentID)\n")
 
     do {
-        try writeToSlot(currentID, slot: saveTo)
+        try writeToSlot(currentID, slot: saveTo, instanceID: instanceID)
         debugLog("[DEBUG] toggle(saveTo: \(saveTo)): saved to slot \(saveTo)=\(currentID)\n")
     } catch {
         debugLog("Error: Failed to write slot \(saveTo): \(error.localizedDescription)\n")
         exit(1)
     }
 
-    guard let targetID = readFromSlot(restoreFrom) ?? fallback else {
+    guard let targetID = readFromSlot(restoreFrom, instanceID: instanceID) ?? fallback else {
         debugLog("[DEBUG] toggle(saveTo: \(saveTo)): no slot \(restoreFrom) and no fallback, staying on current\n")
         exit(0)
     }
@@ -366,14 +382,14 @@ func toggle(saveTo: String, restoreFrom: String, fallback: String?) -> Never {
 }
 
 // Save current input source to slot
-func saveCurrentInputSource(to slot: String) -> Never {
+func saveCurrentInputSource(to slot: String, instanceID: String?) -> Never {
     guard let currentID = getCurrentInputSourceID() else {
         debugLog("Error: Failed to get current input source\n")
         exit(1)
     }
 
     do {
-        try writeToSlot(currentID, slot: slot)
+        try writeToSlot(currentID, slot: slot, instanceID: instanceID)
         exit(0)
     } catch {
         debugLog("Error: Failed to write slot \(slot): \(error.localizedDescription)\n")
@@ -390,6 +406,9 @@ guard CommandLine.arguments.count > 1 else {
 }
 
 let command = CommandLine.arguments[1]
+// Optional instance identifier (v:servername or PID) that isolates slot
+// files between concurrently running Neovim instances (see issue #31)
+let instanceID: String? = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : nil
 
 if command == "keyboard-info" {
     // Diagnostic: print keyboard layout detection details for manual verification
@@ -418,12 +437,12 @@ if command == "keyboard-info" {
 } else if command == "toggle-from-insert" {
     // Toggle from Insert mode: save current to slot A, switch to slot B.
     // No fallback: if slot B is empty, stay on the current input source.
-    toggle(saveTo: "a", restoreFrom: "b", fallback: nil)
+    toggle(saveTo: "a", restoreFrom: "b", fallback: nil, instanceID: instanceID)
 
 } else if command == "toggle-from-normal" {
     // Toggle from Normal mode: save current to slot B, switch to slot A.
     // No fallback: if slot A is empty, stay on the current input source.
-    toggle(saveTo: "b", restoreFrom: "a", fallback: nil)
+    toggle(saveTo: "b", restoreFrom: "a", fallback: nil, instanceID: instanceID)
 
 } else if command == "toggle" {
     // Toggle between two saved IME states
@@ -433,8 +452,8 @@ if command == "keyboard-info" {
     }
 
     // Load slot A and B
-    let slotAID = readFromSlot("a")
-    let slotBID = readFromSlot("b")
+    let slotAID = readFromSlot("a", instanceID: instanceID)
+    let slotBID = readFromSlot("b", instanceID: instanceID)
 
     // Determine which slot to switch to
     let targetID: String?
@@ -447,7 +466,7 @@ if command == "keyboard-info" {
     } else {
         // Current is neither A nor B - save current to slot B, switch to slot A
         do {
-            try writeToSlot(currentID, slot: "b")
+            try writeToSlot(currentID, slot: "b", instanceID: instanceID)
         } catch {
             debugLog("Error: Failed to write slot B: \(error.localizedDescription)\n")
             exit(1)
@@ -469,11 +488,11 @@ if command == "keyboard-info" {
     }
 } else if command == "save-insert" {
     // Save current input source to slot A (insert mode IME)
-    saveCurrentInputSource(to: "a")
+    saveCurrentInputSource(to: "a", instanceID: instanceID)
 
 } else if command == "save-normal" {
     // Save current input source to slot B (normal mode IME)
-    saveCurrentInputSource(to: "b")
+    saveCurrentInputSource(to: "b", instanceID: instanceID)
 
 } else {
     // Legacy: Switch to specified input source
