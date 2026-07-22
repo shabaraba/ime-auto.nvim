@@ -4,7 +4,6 @@ M.config = require("ime-auto.config")
 M.ime = require("ime-auto.ime")
 M.escape = require("ime-auto.escape")
 M.utils = require("ime-auto.utils")
-M.ui = require("ime-auto.ui")
 
 local enabled = false
 

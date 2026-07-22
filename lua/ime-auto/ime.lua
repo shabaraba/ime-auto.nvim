@@ -217,27 +217,4 @@ function M.list_input_sources()
   return sources and table.concat(sources, "\n") or nil
 end
 
-function M.parse_input_sources()
-  local ok, err = require_macos()
-  if not ok then return nil, err end
-
-  local swift_tool = require("ime-auto.swift-ime-tool")
-  local source_list = swift_tool.list()
-  if not source_list then return {} end
-
-  local sources = {}
-  for _, entry in ipairs(source_list) do
-    -- Parse "id - name" format from swift_tool.list()
-    local id, name = entry:match("^(.-)%s*%-%s*(.+)$")
-    if id and name then
-      table.insert(sources, { id = id, name = name })
-    else
-      -- Fallback: treat entire entry as ID and extract name from ID
-      local fallback_name = entry:match("%.([^.]+)$") or entry
-      table.insert(sources, { id = entry, name = fallback_name })
-    end
-  end
-  return sources
-end
-
 return M

@@ -26,7 +26,6 @@ ime-auto.nvim/
 │   ├── ime.lua               # IME制御コアロジック（キャッシング・非同期実行）
 │   ├── escape.lua            # エスケープシーケンス実装（InsertCharPre）
 │   ├── swift-ime-tool.lua    # Swift統合レイヤー（遅延コンパイル）
-│   ├── ui.lua                # UI/ダイアログ（入力ソース選択）
 │   └── utils.lua             # ユーティリティ関数
 ├── swift/
 │   └── ime-tool.swift        # macOS IME制御（Carbon API）
@@ -48,7 +47,6 @@ init.lua (エントリーポイント)
  │   ├─ PowerShell (Windows)
  │   └─ fcitx-remote/ibus (Linux)
  ├─ escape.lua (エスケープシーケンス)
- ├─ ui.lua (UI/ダイアログ)
  └─ utils.lua (ユーティリティ)
 ```
 
