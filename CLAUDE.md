@@ -310,6 +310,23 @@ swiftc --version
 - 最新版（v1.x.x以降）では自動で解決されます
 - JISキーボードの場合のみキーイベント送信により入力モードを強制
 - 問題が続く場合は、デバッグログ（`~/.local/share/nvim/ime-auto/debug.log`）を確認してください
+
+**問題**: USキーボードなのにモード切替時にフォーカス中の別アプリへキーが誤入力される（#14）
+**原因**: `isJISKeyboard()`が`LMGetKbdType()`の未知の戻り値をすべてJISとみなすフォールバックになっており、
+USキーボードでも「かな」「英数」キー（存在しない仮想キーコード）のCGEventが誤送出されていた
+**解決済み**: `KBGetLayoutType(LMGetKbdType())`でCarbon APIが返す物理レイアウト種別
+（`kKeyboardJIS`/`kKeyboardANSI`/`kKeyboardISO`）を直接判定するよう変更。
+判定不能な場合のデフォルトも「JISとみなす」から「JISとみなさない」に変更した。
+Kotoeri（日本語IME）のID一致判定も、現行macOSのID命名（`RomajiTyping`/`KanaTyping`等）の
+前方一致に対応させたが、これはCarbon APIで判定できない場合の最終フォールバックに過ぎない。
+**手動確認方法**:
+```bash
+# swift-ime バイナリで実機のキーボードレイアウト判定結果を確認できる
+~/.local/share/nvim/ime-auto/swift-ime keyboard-info
+# 出力例: kbdType=93 layoutType=1246319392 isJISKeyboard=true
+```
+USキーボードでは `isJISKeyboard=false` となり、モード切替時にキーイベントが送出されないことを確認する。
+
 **問題**: エスケープシーケンスが動作しない
 **解決**:
 1. 全角文字で入力していることを確認
