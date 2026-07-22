@@ -10,6 +10,7 @@ M.defaults = {
     off = nil,
     status = nil,
   },
+  custom_status_true_pattern = nil,
   debug = false,
 }
 
