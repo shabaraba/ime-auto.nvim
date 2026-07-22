@@ -20,8 +20,9 @@ func debugLog(_ message: String) {
             // Create file if it doesn't exist
             try? logMessage.write(to: debugLogPath, atomically: true, encoding: .utf8)
         }
+
+        fputs(message + "\n", stderr)
     }
-    fputs(message + "\n", stderr)
 }
 
 // MARK: - Helper Functions
