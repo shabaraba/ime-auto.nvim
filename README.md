@@ -47,6 +47,32 @@ Neovim で日本語を快適に編集するために、モード切り替え時�
 
 </details>
 
+<details>
+<summary>独自コマンドで IME を制御する場合（ime_method = "custom"）</summary>
+
+`fcitx-remote` や `ibus` 以外のツールを使いたい場合や、Linux/Windows で組み込みの制御方法が合わない場合は、
+`ime_method = "custom"` を指定して on/off/status を任意のシェルコマンドに委譲できます。
+
+```lua
+require("ime-auto").setup({
+  ime_method = "custom",
+  custom_commands = {
+    on = "my-ime-tool --on",
+    off = "my-ime-tool --off",
+    status = "my-ime-tool --status",
+  },
+  -- status コマンドの標準出力のうち、この Lua パターンにマッチしたら
+  -- 「IME が ON（日本語入力中）」とみなす
+  custom_status_true_pattern = "^ja$",
+})
+```
+
+- `custom_status_true_pattern` を設定しない場合、`status` コマンドの出力を真偽値に変換できないため
+  `:ImeAutoStatus` や自動復元機能は状態不明（`nil`）として扱われます。必ず設定してください。
+- `status` コマンドが 0 以外の終了コードを返した場合はエラーとして扱われ、状態不明として扱われます。
+
+</details>
+
 ## 📚 使い方
 
 詳細なドキュメントは Neovim 内で参照できます：

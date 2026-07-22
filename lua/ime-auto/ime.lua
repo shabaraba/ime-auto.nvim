@@ -20,12 +20,38 @@ local MODE_CHANGE_DEBOUNCE_MS = 100
 local function execute_command(cmd)
   if not cmd then return nil end
 
-  local handle = io.popen(cmd)
-  if not handle then return nil end
+  local result = vim.fn.system(cmd)
+  local exit_code = vim.v.shell_error
 
-  local result = handle:read("*a")
-  handle:close()
+  if exit_code ~= 0 then
+    utils.notify(
+      string.format("Command failed (exit code %d): %s", exit_code, cmd),
+      vim.log.levels.ERROR
+    )
+    return nil
+  end
+
   return utils.trim(result)
+end
+
+local function custom_status_to_boolean(result, pattern)
+  if result == nil then return nil end
+
+  if not pattern then
+    utils.notify(
+      "custom_status_true_pattern is not configured; cannot determine IME status for ime_method='custom'",
+      vim.log.levels.WARN
+    )
+    return nil
+  end
+
+  local ok, matched = pcall(string.match, result, pattern)
+  if not ok then
+    utils.notify("Invalid custom_status_true_pattern: " .. tostring(matched), vim.log.levels.ERROR)
+    return nil
+  end
+
+  return matched ~= nil
 end
 
 local function ime_control_macos(action)
@@ -98,7 +124,11 @@ function M.control(action)
   if config.ime_method == "custom" then
     local cmd = config.custom_commands[action]
     if cmd then
-      return execute_command(cmd)
+      local result = execute_command(cmd)
+      if action == "status" then
+        return custom_status_to_boolean(result, config.custom_status_true_pattern)
+      end
+      return result
     end
   end
   
