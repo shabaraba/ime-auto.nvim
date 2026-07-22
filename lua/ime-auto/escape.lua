@@ -3,6 +3,7 @@ local M = {}
 M.enabled = true
 
 local matched_count = 0
+local match_start_pos = nil
 local timer = nil
 
 local function clear_pending()
@@ -11,6 +12,17 @@ local function clear_pending()
     timer = nil
   end
   matched_count = 0
+  match_start_pos = nil
+end
+
+local function is_at_expected_pos()
+  if not match_start_pos then
+    return false
+  end
+  local config = require("ime-auto.config").get()
+  local matched_bytes = vim.fn.strlen(vim.fn.strcharpart(config.escape_sequence, 0, matched_count))
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  return cursor[1] == match_start_pos[1] and cursor[2] == match_start_pos[2] + matched_bytes
 end
 
 local function handle_escape_sequence()
@@ -59,14 +71,26 @@ local function advance_match(count, seq_len, escape_timeout)
 
   if count >= seq_len then
     matched_count = 0
+    match_start_pos = nil
     vim.schedule(function()
       handle_escape_sequence()
     end)
     return
   end
 
+  if count == 1 then
+    local cursor = vim.api.nvim_win_get_cursor(0)
+    match_start_pos = { cursor[1], cursor[2] }
+  end
+
   matched_count = count
   timer = vim.fn.timer_start(escape_timeout, clear_pending)
+end
+
+function M.on_cursor_moved_i()
+  if matched_count > 0 and not is_at_expected_pos() then
+    clear_pending()
+  end
 end
 
 function M.on_insert_char_pre()
@@ -91,7 +115,7 @@ function M.on_insert_char_pre()
   local expected_char = vim.fn.strcharpart(escape_seq, matched_count, 1)
   local first_char = vim.fn.strcharpart(escape_seq, 0, 1)
 
-  if char == expected_char then
+  if char == expected_char and (matched_count == 0 or is_at_expected_pos()) then
     advance_match(matched_count + 1, seq_len, config.escape_timeout)
   elseif char == first_char then
     advance_match(1, seq_len, config.escape_timeout)
@@ -101,9 +125,16 @@ function M.on_insert_char_pre()
 end
 
 function M.setup()
+  local group = vim.api.nvim_create_augroup("ime_auto_escape", { clear = true })
+
   vim.api.nvim_create_autocmd("InsertCharPre", {
-    group = vim.api.nvim_create_augroup("ime_auto_escape", { clear = true }),
+    group = group,
     callback = M.on_insert_char_pre,
+  })
+
+  vim.api.nvim_create_autocmd("CursorMovedI", {
+    group = group,
+    callback = M.on_cursor_moved_i,
   })
 end
 

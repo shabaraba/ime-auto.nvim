@@ -4,11 +4,22 @@
 local ime_auto = require("ime-auto")
 local escape = require("ime-auto.escape")
 
+-- Simulates the cursor advancing between the two escape-sequence
+-- keystrokes, matching how Neovim actually fires InsertCharPre (before
+-- insertion) followed by the cursor moving past the inserted character.
 local function type_escape_sequence()
+  local cursor = vim.api.nvim_win_get_cursor(0)
+
   vim.v.char = "ｋ"
   escape.on_insert_char_pre()
+  cursor = { cursor[1], cursor[2] + vim.fn.strlen("ｋ") }
+  vim.api.nvim_win_set_cursor(0, cursor)
+
   vim.v.char = "ｊ"
   escape.on_insert_char_pre()
+  cursor = { cursor[1], cursor[2] + vim.fn.strlen("ｊ") }
+  vim.api.nvim_win_set_cursor(0, cursor)
+
   vim.wait(50)
 end
 
@@ -36,7 +47,7 @@ describe("Test 04: Disable stops escape sequence handling", function()
       ime_auto.disable()
 
       vim.api.nvim_buf_set_lines(0, 0, -1, false, { "testｋｊ" })
-      vim.api.nvim_win_set_cursor(0, { 1, vim.fn.strlen("testｋｊ") })
+      vim.api.nvim_win_set_cursor(0, { 1, vim.fn.strlen("test") })
 
       type_escape_sequence()
 
@@ -59,7 +70,7 @@ describe("Test 04: Disable stops escape sequence handling", function()
       ime_auto.enable()
 
       vim.api.nvim_buf_set_lines(0, 0, -1, false, { "testｋｊ" })
-      vim.api.nvim_win_set_cursor(0, { 1, vim.fn.strlen("testｋｊ") })
+      vim.api.nvim_win_set_cursor(0, { 1, vim.fn.strlen("test") })
 
       type_escape_sequence()
 
