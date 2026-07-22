@@ -20,11 +20,7 @@ local MODE_CHANGE_DEBOUNCE_MS = 100
 local function execute_command(cmd)
   if not cmd then return nil end
 
-  local handle = io.popen(cmd)
-  if not handle then return nil end
-
-  local result = handle:read("*a")
-  handle:close()
+  local result = vim.fn.system(cmd)
   return utils.trim(result)
 end
 
