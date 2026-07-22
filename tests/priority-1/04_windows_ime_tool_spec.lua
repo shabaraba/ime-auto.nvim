@@ -1,0 +1,65 @@
+-- tests/priority-1/04_windows_ime_tool_spec.lua
+-- Test 04: Windows PowerShell IME tool wrapper
+
+local windows_tool = require("ime-auto.windows-ime-tool")
+
+describe("Test 04: Windows IME tool", function()
+  describe("4.1: Action validation", function()
+    it("should accept known actions", function()
+      assert.is_true(windows_tool.is_valid_action("get-current"))
+      assert.is_true(windows_tool.is_valid_action("toggle-from-insert"))
+      assert.is_true(windows_tool.is_valid_action("toggle-from-normal"))
+    end)
+
+    it("should reject nil or non-string actions", function()
+      assert.is_false(windows_tool.is_valid_action(nil))
+      assert.is_false(windows_tool.is_valid_action(123))
+    end)
+
+    it("should reject actions with shell metacharacters", function()
+      assert.is_false(windows_tool.is_valid_action("get-current; rm -rf /"))
+      assert.is_false(windows_tool.is_valid_action("get-current`whoami`"))
+      assert.is_false(windows_tool.is_valid_action("get current"))
+      assert.is_false(windows_tool.is_valid_action(""))
+    end)
+  end)
+
+  describe("4.2: Command string construction", function()
+    it("should build a powershell command with ExecutionPolicy Bypass", function()
+      local cmd = windows_tool.build_command("/plugin/powershell/ime-tool.ps1", "get-current")
+
+      assert.is_true(cmd:match("^powershell ") ~= nil)
+      assert.is_true(cmd:match("%-ExecutionPolicy Bypass") ~= nil)
+      assert.is_true(cmd:match("%-NoProfile") ~= nil)
+      assert.is_true(cmd:match("%-Action") ~= nil)
+      assert.is_true(cmd:match("get%-current") ~= nil)
+    end)
+
+    it("should shell-escape the script path and action", function()
+      local cmd = windows_tool.build_command("/path with space/ime-tool.ps1", "toggle-from-insert")
+
+      assert.is_true(cmd:match("toggle%-from%-insert") ~= nil)
+      assert.is_true(#cmd > 0)
+    end)
+  end)
+
+  describe("4.3: Public API availability", function()
+    it("should expose get_current, toggle_from_insert, toggle_from_normal", function()
+      assert.equals("function", type(windows_tool.get_current))
+      assert.equals("function", type(windows_tool.toggle_from_insert))
+      assert.equals("function", type(windows_tool.toggle_from_normal))
+    end)
+
+    it("should not error when the PowerShell tool is unavailable", function()
+      assert.has_no.errors(function()
+        windows_tool.get_current()
+      end)
+      assert.has_no.errors(function()
+        windows_tool.toggle_from_insert()
+      end)
+      assert.has_no.errors(function()
+        windows_tool.toggle_from_normal()
+      end)
+    end)
+  end)
+end)
