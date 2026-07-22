@@ -23,7 +23,7 @@ ime-auto.nvim/
 ├── lua/ime-auto/
 │   ├── init.lua              # エントリーポイント・autocmd登録
 │   ├── config.lua            # 設定管理・OS自動検出
-│   ├── ime.lua               # IME制御コアロジック（キャッシング・デバウンス）
+│   ├── ime.lua               # IME制御コアロジック（キャッシング・非同期実行）
 │   ├── escape.lua            # エスケープシーケンス実装（InsertCharPre）
 │   ├── swift-ime-tool.lua    # Swift統合レイヤー（遅延コンパイル）
 │   ├── ui.lua                # UI/ダイアログ（入力ソース選択）
@@ -83,7 +83,7 @@ nvim --headless -u tests/minimal_init.lua \
 ### パフォーマンス要件
 
 1. **キャッシング**: 頻繁に呼ばれる関数は結果をキャッシュ（TTL: 500ms）
-2. **デバウンス**: 連続するイベントは100msデバウンス
+2. **非同期実行**: InsertEnter/InsertLeave での IME 切り替えは `vim.system()` による非同期呼び出しでメインループをブロックしない
 3. **遅延初期化**: コンパイル・読み込みは初回実行時のみ
 
 ### セキュリティ要件
@@ -120,7 +120,7 @@ nvim --headless -u tests/minimal_init.lua \
 
 **最適化**:
 - **IME状態キャッシュ**: `cached_ime_state` テーブル（TTL: 500ms）
-- **デバウンス**: `debounce_timer` で100msデバウンス
+- **非同期IME切り替え**: `swift-ime-tool.lua` が `vim.system()` を使い、InsertEnter/InsertLeave の Swift バイナリ呼び出しをメインループ非ブロッキングで実行
 
 **プラットフォーム別実装**:
 - macOS: `swift-ime-tool.lua` 経由で Swift ツール呼び出し
