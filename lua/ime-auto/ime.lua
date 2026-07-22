@@ -13,6 +13,10 @@ local ime_state_cache = {
   ttl_ms = 500
 }
 
+local function invalidate_ime_state_cache()
+  ime_state_cache.value = nil
+end
+
 local function execute_command(cmd)
   if not cmd then return nil end
 
@@ -51,46 +55,40 @@ local function ime_control_macos(action)
 end
 
 local function ime_control_windows(action)
+  local windows_tool = require("ime-auto.windows-ime-tool")
+
   if action == "off" then
-    return vim.fn.system([[powershell -Command "[System.Windows.Forms.SendKeys]::SendWait('{KANJI}')"]])
+    return windows_tool.toggle_from_insert()
   elseif action == "on" then
-    return vim.fn.system([[powershell -Command "[System.Windows.Forms.SendKeys]::SendWait('{KANJI}')"]])
+    return windows_tool.toggle_from_normal()
   elseif action == "status" then
-    local result = execute_command([[powershell -Command "Get-WinUserLanguageList | Where-Object {$_.LanguageTag -eq 'ja-JP'} | Select-Object -ExpandProperty InputMethodTips"]])
-    return result and result:match("0411:00000411") ~= nil
+    local result = windows_tool.get_current()
+    if not result then return false end
+
+    -- Japanese language tag is 0411; any registered IME under it counts as active
+    return result:match("^0411:") ~= nil
   end
 end
 
 local function ime_control_linux(action)
-  local fcitx_exists = vim.fn.executable("fcitx-remote") == 1
-  local ibus_exists = vim.fn.executable("ibus") == 1
-  
-  if fcitx_exists then
-    if action == "off" then
-      return vim.fn.system("fcitx-remote -c")
-    elseif action == "on" then
-      return vim.fn.system("fcitx-remote -o")
-    elseif action == "status" then
-      local result = execute_command("fcitx-remote")
-      return result and result == "2"
-    end
-  elseif ibus_exists then
-    if action == "off" then
-      return vim.fn.system("ibus engine 'xkb:us::eng'")
-    elseif action == "on" then
-      return vim.fn.system("ibus engine 'mozc-jp'")
-    elseif action == "status" then
-      local result = execute_command("ibus engine")
-      return result and result:match("mozc") ~= nil
-    end
+  local linux_tool = require("ime-auto.linux-ime-tool")
+
+  if action == "off" then
+    return linux_tool.toggle_from_insert()
+  elseif action == "on" then
+    return linux_tool.toggle_from_normal()
+  elseif action == "status" then
+    return linux_tool.is_active()
   end
-  
-  return nil
 end
 
 function M.control(action)
   local config = require("ime-auto.config").get()
-  
+
+  if action == "on" or action == "off" then
+    invalidate_ime_state_cache()
+  end
+
   if config.ime_method == "custom" then
     local cmd = config.custom_commands[action]
     if cmd then
@@ -154,10 +152,22 @@ end
 function M.restore_state()
   local config = require("ime-auto.config").get()
 
-  -- macOS: Use slot-based management to restore Insert mode IME state
+  -- macOS/Windows: Use slot-based management to restore Insert mode IME state
   if config.os == "macos" then
     local swift_tool = require("ime-auto.swift-ime-tool")
     swift_tool.toggle_from_normal()
+    invalidate_ime_state_cache()
+    return
+  elseif config.os == "windows" then
+    local windows_tool = require("ime-auto.windows-ime-tool")
+    windows_tool.toggle_from_normal()
+    return
+  end
+
+  -- Linux: Use slot-based management to restore Insert mode IME state
+  if config.os == "linux" then
+    local linux_tool = require("ime-auto.linux-ime-tool")
+    linux_tool.toggle_from_normal()
     return
   end
 
