@@ -80,39 +80,53 @@ func sendKanaKey() {
     usleep(50000) // 50ms for the input mode to settle
 }
 
+// Check if an input source ID matches a known Kotoeri Japanese variant
+// (old and current macOS naming conventions)
+func isKotoeriJapaneseSource(_ sourceID: String) -> Bool {
+    let knownPrefixes = [
+        "com.apple.inputmethod.Kotoeri.Japanese",
+        "com.apple.inputmethod.Kotoeri.KanaTyping.Japanese",
+        "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese",
+    ]
+    return knownPrefixes.contains { sourceID.hasPrefix($0) }
+}
+
 // Detect keyboard type
-// Note: LMGetKbdType() returns different values on Apple Silicon Macs
-// Instead, we check if Eisu/Kana keys are available by checking keyboard layout
+// Primary detection uses KBGetLayoutType(), which maps LMGetKbdType() to a
+// physical layout (kKeyboardJIS/kKeyboardANSI/kKeyboardISO) and is reliable
+// across Intel and Apple Silicon Macs.
 func isJISKeyboard() -> Bool {
     let keyboardType = LMGetKbdType()
+    let layoutType = KBGetLayoutType(Int16(keyboardType))
 
-    // Known JIS keyboard types
+    if layoutType == kKeyboardJIS {
+        return true
+    } else if layoutType == kKeyboardANSI || layoutType == kKeyboardISO {
+        return false
+    } else {
+        debugLog("[isJISKeyboard] KBGetLayoutType returned unrecognized layout \(layoutType) for kbdType \(keyboardType), falling back")
+    }
+
+    // Legacy numeric fallback for older keyboard type reporting
     if keyboardType == 40 || keyboardType == 41 {
         return true
     }
 
-    // On Apple Silicon and newer Macs, check for Japanese keyboard layout
-    // by looking for Japanese-specific input sources
+    // Last-resort heuristic: presence of a Kotoeri Japanese input source is a
+    // weak signal (it does not strictly require JIS hardware), kept only for
+    // the case where the physical layout truly cannot be determined above.
     if let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] {
         for source in sources {
             if let idPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) {
                 let id = Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String
-                // If we have com.apple.inputmethod.Kotoeri (built-in Japanese IME),
-                // it's likely a JIS keyboard setup
-                if id == "com.apple.inputmethod.Kotoeri.Japanese" {
+                if isKotoeriJapaneseSource(id) {
                     return true
                 }
             }
         }
     }
 
-    // Fallback: assume JIS if keyboard type is not standard US (42, 43)
-    // This is not perfect but covers most cases
-    if keyboardType != 42 && keyboardType != 43 {
-        debugLog("[isJISKeyboard] Unknown keyboard type \(keyboardType), assuming JIS")
-        return true
-    }
-
+    debugLog("[isJISKeyboard] Unable to determine keyboard layout (kbdType=\(keyboardType)), defaulting to non-JIS")
     return false
 }
 
@@ -270,7 +284,12 @@ guard CommandLine.arguments.count > 1 else {
 
 let command = CommandLine.arguments[1]
 
-if command == "list" {
+if command == "keyboard-info" {
+    // Diagnostic: print keyboard layout detection details for manual verification
+    let keyboardType = LMGetKbdType()
+    let layoutType = KBGetLayoutType(Int16(keyboardType))
+    print("kbdType=\(keyboardType) layoutType=\(layoutType) isJISKeyboard=\(isJISKeyboard())")
+} else if command == "list" {
     // List all selectable input sources
     if let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] {
         for source in sources {
