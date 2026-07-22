@@ -164,6 +164,14 @@ func isEnglishIME(_ source: TISInputSource) -> Bool {
     return isASCIICapable(source)
 }
 
+// Check whether the currently selected input source is ASCII-capable.
+// Used for IME status reporting: any non-ASCII-capable source requires
+// composition, so it counts as "IME on" regardless of its ID string.
+func isCurrentSourceASCIICapable() -> Bool {
+    let current = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
+    return isASCIICapable(current)
+}
+
 // Switch to input source by ID, returns true on success
 // Also sends appropriate key event to force input mode (English/Japanese)
 func switchToInputSource(_ targetID: String, forceInputMode: Bool = true) -> Bool {
@@ -305,6 +313,11 @@ if command == "keyboard-info" {
             }
         }
     }
+} else if command == "status" {
+    // Report whether the current input source is engaged in IME (non-ASCII) mode.
+    // Determined via kTISPropertyInputSourceIsASCIICapable, not ID string matching.
+    print(isCurrentSourceASCIICapable() ? "off" : "on")
+    exit(0)
 } else if command == "toggle-from-insert" {
     // Toggle from Insert mode: save current to slot A, switch to slot B
     guard let currentID = getCurrentInputSourceID() else {

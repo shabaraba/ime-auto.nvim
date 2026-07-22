@@ -195,14 +195,20 @@ Carbon APIは**Input Source ID**（例: `com.google.inputmethod.Japanese.base`�
 
 ```swift
 // JISキーボードでのみ実行
+// isASCIICapable() は kTISPropertyInputSourceIsASCIICapable を参照する
+// （IDの部分文字列マッチではなく、TISの正式プロパティで判定）
 if isJISKeyboard() {
-    if isJapaneseIME(targetID) {
-        sendKanaKey()  // かなキー（0x68）を送信してひらがなモードに
-    } else if isEnglishIME(targetID) {
+    if isASCIICapable(source) {
         sendEisuKey()  // 英数キー（0x66）を送信して英数モードに
+    } else {
+        sendKanaKey()  // かなキー（0x68）を送信してひらがなモードに
     }
 }
 ```
+
+**IMEステータス判定（`:ImeAutoStatus` 等、v1.x.x以降）**:
+Lua側 (`ime.lua`) はID文字列のマッチングでIME状態を再判定せず、Swiftツールの `status` コマンドが返す
+`on`/`off`（`isCurrentSourceASCIICapable()` によるTISプロパティベースの判定結果）をそのまま信頼する。
 
 **キーボードタイプ別の動作**:
 - **JISキーボード** (type 40, 41): Input Source切り替え + 入力モード強制
