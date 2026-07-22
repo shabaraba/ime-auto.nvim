@@ -6,6 +6,28 @@ local utils = require("ime-auto.utils")
 
 local swift_bin_path = nil
 
+-- Sanitize a raw identifier to the character set accepted by the Swift tool
+-- (alphanumeric, dot, dash, underscore). Exposed for testability; pure
+-- function with no side effects.
+function M.sanitize_instance_id(raw)
+  local id = (raw or ""):gsub("[^%w%.%-_]", "_")
+  if id == "" then
+    id = tostring(vim.fn.getpid())
+  end
+  return id
+end
+
+-- Unique identifier for this Neovim instance, used to isolate slot files
+-- between concurrently running instances (see issue #31)
+local function get_instance_id()
+  local raw = vim.v.servername
+  if not raw or raw == "" then
+    raw = tostring(vim.fn.getpid())
+  end
+  return M.sanitize_instance_id(raw)
+end
+
+-- args: nil, or a list of positional arguments passed to the Swift binary
 local function run_swift_command(args)
   local ok, err = M.ensure_compiled()
   if not ok then
@@ -19,12 +41,13 @@ local function run_swift_command(args)
   local config = require("ime-auto.config").get()
   local env_prefix = config.debug and "IME_AUTO_DEBUG=1 " or ""
 
-  local cmd
+  local parts = { vim.fn.shellescape(swift_bin_path) }
   if args then
-    cmd = string.format('%s%s %s', env_prefix, vim.fn.shellescape(swift_bin_path), vim.fn.shellescape(args))
-  else
-    cmd = string.format('%s%s', env_prefix, vim.fn.shellescape(swift_bin_path))
+    for _, arg in ipairs(args) do
+      table.insert(parts, vim.fn.shellescape(arg))
+    end
   end
+  local cmd = env_prefix .. table.concat(parts, " ")
   local result = vim.fn.system(cmd)
   local success = vim.v.shell_error == 0
   return result, success
@@ -98,12 +121,12 @@ function M.switch_to(source_id)
     return false
   end
 
-  local _, success = run_swift_command(source_id)
+  local _, success = run_swift_command({ source_id })
   return success
 end
 
 function M.list()
-  local result, success = run_swift_command("list")
+  local result, success = run_swift_command({ "list" })
   if not success or not result then
     return nil
   end
@@ -118,27 +141,27 @@ function M.list()
 end
 
 function M.toggle()
-  local _, success = run_swift_command("toggle")
+  local _, success = run_swift_command({ "toggle", get_instance_id() })
   return success
 end
 
 function M.save_insert_ime()
-  local _, success = run_swift_command("save-insert")
+  local _, success = run_swift_command({ "save-insert", get_instance_id() })
   return success
 end
 
 function M.save_normal_ime()
-  local _, success = run_swift_command("save-normal")
+  local _, success = run_swift_command({ "save-normal", get_instance_id() })
   return success
 end
 
 function M.toggle_from_insert()
-  local _, success = run_swift_command("toggle-from-insert")
+  local _, success = run_swift_command({ "toggle-from-insert", get_instance_id() })
   return success
 end
 
 function M.toggle_from_normal()
-  local _, success = run_swift_command("toggle-from-normal")
+  local _, success = run_swift_command({ "toggle-from-normal", get_instance_id() })
   return success
 end
 

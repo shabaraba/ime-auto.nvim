@@ -134,13 +134,16 @@ nvim --headless -u tests/minimal_init.lua \
 **スロット設計**:
 - Slot A: Insert モードの IME 状態
 - Slot B: Normal モードの IME 状態
-- ストレージ: `~/.local/share/nvim/ime-auto/saved-ime-{a|b}.txt`
+- ストレージ: `~/.local/share/nvim/ime-auto/saved-ime-{a|b}-<instance_id>.txt`
+  - `<instance_id>` は Lua側（`swift-ime-tool.lua`）が `v:servername`（空の場合は `getpid()`）から生成し、
+    ファイル名に安全な文字（英数字・`.`・`-`・`_`）のみに正規化した上でSwiftツールに引数として渡す
+  - これにより複数のNeovimインスタンスを同時起動してもスロットファイルが競合しない（issue #31）
 
 **主要関数**:
 - `toggle_from_insert()`: Insert → Normal 遷移時
 - `toggle_from_normal()`: Normal → Insert 遷移時
-- `writeToSlot()`: スロットに IME ID を保存
-- `readFromSlot()`: スロットから IME ID を読み込み
+- `writeToSlot()`: スロットに IME ID を保存（`instanceID` 引数でファイルを分離）
+- `readFromSlot()`: スロットから IME ID を読み込み（`instanceID` 引数でファイルを分離）
 
 ### 4. Swift ツール統合
 

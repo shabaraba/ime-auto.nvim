@@ -176,23 +176,25 @@ func switchToInputSource(_ targetID: String, forceInputMode: Bool = true) -> Boo
 }
 
 // Write IME ID to slot with secure permissions
-func writeToSlot(_ id: String, slot: String) throws {
-    let slotFile = getSaveFilePath(slot: slot)
+func writeToSlot(_ id: String, slot: String, instanceID: String? = nil) throws {
+    let slotFile = getSaveFilePath(slot: slot, instanceID: instanceID)
     try id.write(to: slotFile, atomically: true, encoding: .utf8)
     // Set secure file permissions (owner read/write only)
     try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: slotFile.path)
 }
 
 // Read IME ID from slot
-func readFromSlot(_ slot: String) -> String? {
-    let slotFile = getSaveFilePath(slot: slot)
+func readFromSlot(_ slot: String, instanceID: String? = nil) -> String? {
+    let slotFile = getSaveFilePath(slot: slot, instanceID: instanceID)
     return try? String(contentsOf: slotFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
 // MARK: - File Path Management
 
 // Get save file paths and ensure directory exists
-func getSaveFilePath(slot: String = "current") -> URL {
+// instanceID isolates slot files per Neovim instance (see issue #31) to
+// prevent concurrent Neovim instances from overwriting each other's IME state.
+func getSaveFilePath(slot: String = "current", instanceID: String? = nil) -> URL {
     // Validate slot parameter to prevent path traversal
     let validSlotPattern = "^[a-zA-Z0-9_-]+$"
     guard let regex = try? NSRegularExpression(pattern: validSlotPattern),
@@ -200,6 +202,20 @@ func getSaveFilePath(slot: String = "current") -> URL {
         debugLog("Error: Invalid slot name. Only alphanumeric, underscore, and dash allowed.\n")
         exit(1)
     }
+
+    var fileName = "saved-ime-\(slot)"
+    if let instanceID = instanceID, !instanceID.isEmpty {
+        // Validate instance ID to prevent path traversal (defense in depth;
+        // the Lua caller already sanitizes this value)
+        let validInstancePattern = "^[a-zA-Z0-9_.-]+$"
+        guard let instanceRegex = try? NSRegularExpression(pattern: validInstancePattern),
+              instanceRegex.firstMatch(in: instanceID, range: NSRange(instanceID.startIndex..., in: instanceID)) != nil else {
+            debugLog("Error: Invalid instance ID. Only alphanumeric, dot, underscore, and dash allowed.\n")
+            exit(1)
+        }
+        fileName += "-\(instanceID)"
+    }
+    fileName += ".txt"
 
     let homeDir = FileManager.default.homeDirectoryForCurrentUser
     let nvimDataDir = homeDir.appendingPathComponent(".local/share/nvim/ime-auto")
@@ -217,7 +233,7 @@ func getSaveFilePath(slot: String = "current") -> URL {
         }
     }
 
-    return nvimDataDir.appendingPathComponent("saved-ime-\(slot).txt")
+    return nvimDataDir.appendingPathComponent(fileName)
 }
 
 guard CommandLine.arguments.count > 1 else {
@@ -231,6 +247,9 @@ guard CommandLine.arguments.count > 1 else {
 }
 
 let command = CommandLine.arguments[1]
+// Optional instance identifier (v:servername or PID) that isolates slot
+// files between concurrently running Neovim instances (see issue #31)
+let instanceID: String? = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : nil
 
 if command == "list" {
     // List all selectable input sources
@@ -258,7 +277,7 @@ if command == "list" {
 
     // Save current to slot A
     do {
-        try writeToSlot(currentID, slot: "a")
+        try writeToSlot(currentID, slot: "a", instanceID: instanceID)
         debugLog("[DEBUG] toggle-from-insert: saved to slot A=\(currentID)\n")
     } catch {
         debugLog("Error: Failed to write slot A: \(error.localizedDescription)\n")
@@ -266,7 +285,7 @@ if command == "list" {
     }
 
     // Switch to slot B (if exists), otherwise switch to default English (ABC)
-    let targetID = readFromSlot("b") ?? "com.apple.keylayout.ABC"
+    let targetID = readFromSlot("b", instanceID: instanceID) ?? "com.apple.keylayout.ABC"
     debugLog("[DEBUG] toggle-from-insert: target=\(targetID)\n")
 
     if switchToInputSource(targetID) {
@@ -289,7 +308,7 @@ if command == "list" {
 
     // Save current to slot B
     do {
-        try writeToSlot(currentID, slot: "b")
+        try writeToSlot(currentID, slot: "b", instanceID: instanceID)
         debugLog("[DEBUG] toggle-from-normal: saved to slot B=\(currentID)\n")
     } catch {
         debugLog("Error: Failed to write slot B: \(error.localizedDescription)\n")
@@ -297,7 +316,7 @@ if command == "list" {
     }
 
     // Switch to slot A (if exists), otherwise keep current
-    guard let targetID = readFromSlot("a") else {
+    guard let targetID = readFromSlot("a", instanceID: instanceID) else {
         debugLog("[DEBUG] toggle-from-normal: no slot A, staying on current\n")
         exit(0)  // No slot A, stay on current
     }
@@ -321,8 +340,8 @@ if command == "list" {
     }
 
     // Load slot A and B
-    let slotAID = readFromSlot("a")
-    let slotBID = readFromSlot("b")
+    let slotAID = readFromSlot("a", instanceID: instanceID)
+    let slotBID = readFromSlot("b", instanceID: instanceID)
 
     // Determine which slot to switch to
     let targetID: String?
@@ -335,7 +354,7 @@ if command == "list" {
     } else {
         // Current is neither A nor B - save current to slot B, switch to slot A
         do {
-            try writeToSlot(currentID, slot: "b")
+            try writeToSlot(currentID, slot: "b", instanceID: instanceID)
         } catch {
             debugLog("Error: Failed to write slot B: \(error.localizedDescription)\n")
             exit(1)
@@ -362,7 +381,7 @@ if command == "list" {
     }
 
     do {
-        try writeToSlot(currentID, slot: "a")
+        try writeToSlot(currentID, slot: "a", instanceID: instanceID)
         exit(0)
     } catch {
         debugLog("Error: Failed to write slot A: \(error.localizedDescription)\n")
@@ -377,7 +396,7 @@ if command == "list" {
     }
 
     do {
-        try writeToSlot(currentID, slot: "b")
+        try writeToSlot(currentID, slot: "b", instanceID: instanceID)
         exit(0)
     } catch {
         debugLog("Error: Failed to write slot B: \(error.localizedDescription)\n")
