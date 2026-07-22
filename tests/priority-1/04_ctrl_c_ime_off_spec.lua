@@ -43,7 +43,7 @@ describe("Test 04: Ctrl-C leaves Insert mode and turns IME off", function()
     it("should register a ModeChanged autocmd", function()
       local autocmds = vim.api.nvim_get_autocmds({ group = "ime_auto" })
       local mode_changed = vim.tbl_filter(function(cmd)
-        return cmd.event == "ModeChanged"
+        return cmd.event == "ModeChanged" and cmd.pattern == "*:n"
       end, autocmds)
 
       assert.is_true(#mode_changed > 0, "ModeChanged autocmd should be registered")

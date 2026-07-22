@@ -37,7 +37,7 @@ local function create_autocmds()
       handled_by_mode_changed = true
       if enabled then
         M.ime.off()
-        M.utils.notify("IME turned off (mode changed)", vim.log.levels.DEBUG)
+        vim.notify("IME turned off (mode changed)", vim.log.levels.DEBUG)
       end
     end,
   })
