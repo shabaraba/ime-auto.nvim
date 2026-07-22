@@ -54,92 +54,32 @@ local function ime_control_macos(action)
   end
 end
 
-local WINDOWS_JAPANESE_IME_TIP = "0411:00000411"
-
-local windows = {}
-
-function windows.build_status_command()
-  return [[powershell -NoProfile -Command "Get-WinUserLanguageList | Where-Object {$_.LanguageTag -eq 'ja-JP'} | Select-Object -ExpandProperty InputMethodTips"]]
-end
-
-function windows.build_toggle_command()
-  return [[powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{KANJI}')"]]
-end
-
--- Returns true only when the current state differs from the desired state.
--- current_state == nil means "unknown", in which case we refuse to guess
--- (a blind toggle could move the IME into the wrong state).
-function windows.should_toggle(current_state, desired_state)
-  if current_state == nil then
-    return false
-  end
-  return current_state ~= desired_state
-end
-
-local function windows_get_status()
-  local result = execute_command(windows.build_status_command())
-  if not result then return nil end
-  return result:match(WINDOWS_JAPANESE_IME_TIP) ~= nil
-end
-
-local function windows_send_toggle_key()
-  local result = vim.fn.system(windows.build_toggle_command())
-
-  if vim.v.shell_error ~= 0 then
-    utils.notify("Windows IME toggle failed: " .. tostring(result), vim.log.levels.ERROR)
-    return nil
-  end
-
-  return result
-end
-
 local function ime_control_windows(action)
-  if action == "status" then
-    return windows_get_status()
-  end
+  local windows_tool = require("ime-auto.windows-ime-tool")
 
-  if action == "on" or action == "off" then
-    local desired_state = action == "on"
-    local current_state = windows_get_status()
+  if action == "off" then
+    return windows_tool.toggle_from_insert()
+  elseif action == "on" then
+    return windows_tool.toggle_from_normal()
+  elseif action == "status" then
+    local result = windows_tool.get_current()
+    if not result then return false end
 
-    if current_state == nil then
-      utils.notify("Unable to determine Windows IME state; skipping toggle", vim.log.levels.WARN)
-      return nil
-    end
-
-    if not windows.should_toggle(current_state, desired_state) then
-      return ""
-    end
-
-    return windows_send_toggle_key()
+    -- Japanese language tag is 0411; any registered IME under it counts as active
+    return result:match("^0411:") ~= nil
   end
 end
 
 local function ime_control_linux(action)
-  local fcitx_exists = vim.fn.executable("fcitx-remote") == 1
-  local ibus_exists = vim.fn.executable("ibus") == 1
-  
-  if fcitx_exists then
-    if action == "off" then
-      return vim.fn.system("fcitx-remote -c")
-    elseif action == "on" then
-      return vim.fn.system("fcitx-remote -o")
-    elseif action == "status" then
-      local result = execute_command("fcitx-remote")
-      return result and result == "2"
-    end
-  elseif ibus_exists then
-    if action == "off" then
-      return vim.fn.system("ibus engine 'xkb:us::eng'")
-    elseif action == "on" then
-      return vim.fn.system("ibus engine 'mozc-jp'")
-    elseif action == "status" then
-      local result = execute_command("ibus engine")
-      return result and result:match("mozc") ~= nil
-    end
+  local linux_tool = require("ime-auto.linux-ime-tool")
+
+  if action == "off" then
+    return linux_tool.toggle_from_insert()
+  elseif action == "on" then
+    return linux_tool.toggle_from_normal()
+  elseif action == "status" then
+    return linux_tool.is_active()
   end
-  
-  return nil
 end
 
 function M.control(action)
@@ -232,10 +172,21 @@ end
 function M.restore_state()
   local config = require("ime-auto.config").get()
 
-  -- macOS: Use slot-based management to restore Insert mode IME state
+  -- macOS/Windows: Use slot-based management to restore Insert mode IME state
   if config.os == "macos" then
     local swift_tool = require("ime-auto.swift-ime-tool")
     swift_tool.toggle_from_normal()
+    return
+  elseif config.os == "windows" then
+    local windows_tool = require("ime-auto.windows-ime-tool")
+    windows_tool.toggle_from_normal()
+    return
+  end
+
+  -- Linux: Use slot-based management to restore Insert mode IME state
+  if config.os == "linux" then
+    local linux_tool = require("ime-auto.linux-ime-tool")
+    linux_tool.toggle_from_normal()
     return
   end
 
@@ -289,8 +240,5 @@ function M.parse_input_sources()
   end
   return sources
 end
-
--- Exposed for unit testing only; not part of the public API.
-M._windows = windows
 
 return M

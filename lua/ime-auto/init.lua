@@ -8,6 +8,10 @@ M.ui = require("ime-auto.ui")
 
 local enabled = false
 
+-- ModeChanged(i*:n) fires before InsertLeave and also covers <C-c>,
+-- which leaves Insert mode without ever firing InsertLeave.
+local handled_by_mode_changed = false
+
 local function create_autocmds()
   local group = vim.api.nvim_create_augroup("ime_auto", { clear = true })
 
@@ -21,9 +25,31 @@ local function create_autocmds()
     end,
   })
 
+  vim.api.nvim_create_autocmd("ModeChanged", {
+    group = group,
+    pattern = "*:n",
+    callback = function()
+      local old_mode = vim.v.event.old_mode
+      if not old_mode or not old_mode:match("^i") then
+        return
+      end
+
+      handled_by_mode_changed = true
+      if enabled then
+        M.ime.off()
+        vim.notify("IME turned off (mode changed)", vim.log.levels.DEBUG)
+      end
+    end,
+  })
+
   vim.api.nvim_create_autocmd("InsertLeave", {
     group = group,
     callback = function()
+      if handled_by_mode_changed then
+        handled_by_mode_changed = false
+        return
+      end
+
       if enabled then
         M.ime.off()
         M.utils.notify("IME turned off", vim.log.levels.DEBUG)
@@ -99,7 +125,7 @@ function M.enable()
   enabled = true
   -- Only turn off IME on enable if not using slot-based management
   local config = M.config.get()
-  if M.utils.is_normal_mode() and config.os ~= "macos" then
+  if M.utils.is_normal_mode() and config.os ~= "macos" and config.os ~= "linux" and config.os ~= "windows" then
     M.ime.off()
   end
   M.utils.notify("Enabled", vim.log.levels.INFO)
