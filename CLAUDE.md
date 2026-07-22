@@ -208,6 +208,26 @@ if isJISKeyboard() {
 - **JISキーボード** (type 40, 41): Input Source切り替え + 入力モード強制
 - **USキーボード** (type 42, 43, その他): Input Source切り替えのみ（入力モード強制は不要）
 
+**アクセシビリティ権限（macOS必須）**:
+`sendKanaKey()`/`sendEisuKey()` が送信する `CGEvent` は、Neovim（またはターミナルアプリ）に
+アクセシビリティ権限が付与されていないと OS に黙って破棄される。Input Source ID の切り替え自体は
+成功するため、権限がない環境では失敗が握りつぶされ「メニューバーは日本語なのに英字しか打てない」
+問題が再発する。この問題を検知できるよう、キー送信前に `AXIsProcessTrusted()` を確認し、
+権限がない場合はキー送信をスキップして stderr（および `debug.log`）に警告を出力する：
+
+```swift
+func checkAccessibilityPermission() -> Bool {
+    let trusted = AXIsProcessTrusted()
+    if !trusted {
+        debugLog("Warning: Accessibility permission not granted. ...")
+    }
+    return trusted
+}
+```
+
+権限は システム設定 > プライバシーとセキュリティ > アクセシビリティ で
+Neovim/ターミナルアプリを許可することで付与できる。
+
 **パフォーマンス**:
 - 通常ケース: 50ms（1回の待機で完了）
 - 最悪ケース: 200ms（3回リトライ後に完了）
@@ -312,6 +332,14 @@ swiftc --version
 - 最新版（v1.x.x以降）では自動で解決されます
 - JISキーボードの場合のみキーイベント送信により入力モードを強制
 - 問題が続く場合は、デバッグログ（`~/.local/share/nvim/ime-auto/debug.log`）を確認してください
+
+**問題**: JISキーボードで入力モードが強制切り替えされない（同上の症状が権限起因で再発する）
+**原因**: `sendKanaKey`/`sendEisuKey` が送信する CGEvent は、Neovim（またはターミナルアプリ）にアクセシビリティ権限が付与されていないと OS に黙って破棄される。Input Source ID の切り替え自体は成功しているため `switchToInputSource` は `true`/exit 0 を返し、失敗が握りつぶされる
+**解決済み**: `sendKanaKey`/`sendEisuKey` の実行前に `AXIsProcessTrusted()` を確認し、権限がない場合はキー送信をスキップして stderr（および `debug.log`）に警告を出力するようにした
+**対処法**:
+1. システム設定 > プライバシーとセキュリティ > アクセシビリティ で Neovim/ターミナルアプリを許可
+2. 権限変更後は Neovim（または Swift ツールを起動しているプロセス）を再起動
+3. `~/.local/share/nvim/ime-auto/debug.log` に `Warning: Accessibility permission not granted...` が出力されていないか確認
 **問題**: エスケープシーケンスが動作しない
 **解決**:
 1. 全角文字で入力していることを確認
