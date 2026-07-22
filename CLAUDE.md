@@ -23,9 +23,10 @@ ime-auto.nvim/
 ├── lua/ime-auto/
 │   ├── init.lua              # エントリーポイント・autocmd登録
 │   ├── config.lua            # 設定管理・OS自動検出
-│   ├── ime.lua               # IME制御コアロジック（キャッシング・非同期実行）
+│   ├── ime.lua               # IME制御コアロジック（キャッシング・非同期実行・状態管理）
+│   ├── ime-platform.lua      # OS別IME制御コマンド実行（macOS/Windows/Linux）
 │   ├── escape.lua            # エスケープシーケンス実装（InsertCharPre）
-│   ├── swift-ime-tool.lua    # Swift統合レイヤー（遅延コンパイル）
+│   ├── swift-ime-tool.lua    # Swift統合レイヤー（プリコンパイル済みバイナリ利用）
 │   └── utils.lua             # ユーティリティ関数
 ├── swift/
 │   └── ime-tool.swift        # macOS IME制御（Carbon API）
@@ -41,11 +42,12 @@ ime-auto.nvim/
 ```
 init.lua (エントリーポイント)
  ├─ config.lua (設定管理)
- ├─ ime.lua (IME制御)
- │   ├─ swift-ime-tool.lua (macOS Swift統合)
- │   │   └─ swift/ime-tool.swift (Carbon API)
- │   ├─ PowerShell (Windows)
- │   └─ fcitx-remote/ibus (Linux)
+ ├─ ime.lua (IME制御・状態管理)
+ │   └─ ime-platform.lua (OS別コマンド実行)
+ │       ├─ swift-ime-tool.lua (macOS Swift統合)
+ │       │   └─ swift/ime-tool.swift (Carbon API)
+ │       ├─ PowerShell (Windows)
+ │       └─ fcitx-remote/ibus (Linux)
  ├─ escape.lua (エスケープシーケンス)
  └─ utils.lua (ユーティリティ)
 ```
@@ -55,7 +57,9 @@ init.lua (エントリーポイント)
 ### コーディング規約
 
 1. **ファイルサイズ**: 1ファイル100行程度を目標（最大200行）
+   - 例外: `swift/ime-tool.swift` はCLI引数ごとのコマンド分岐（`list`/`toggle-from-insert`/`toggle-from-normal`/`toggle`/`save-insert`/`save-normal`）とCarbon APIによる同期待機・リトライ・JISキーボード対応ロジックが密接に絡み合っており、無理に分割するとCarbon API呼び出しの順序保証（`TISSelectInputSource`の非同期待機→検証→リトライ→入力モード強制）が追いにくくなるため、単一ファイルのまま保守する
 2. **モジュール分割**: 単一責任の原則に従う
+   - 例: `ime.lua`（IME状態のキャッシュ・デバウンス・保存/復元ロジック）と `ime-platform.lua`（macOS/Windows/LinuxごとのIME切り替えコマンド実行）は責務ごとに分離している
 3. **コメント**: 不要なコメントは残さない（コードは自己文書化）
 4. **命名規則**:
    - 変数・関数: `snake_case`
@@ -82,7 +86,7 @@ nvim --headless -u tests/minimal_init.lua \
 
 1. **キャッシング**: 頻繁に呼ばれる関数は結果をキャッシュ（TTL: 500ms）
 2. **非同期実行**: InsertEnter/InsertLeave での IME 切り替えは `vim.system()` による非同期呼び出しでメインループをブロックしない
-3. **遅延初期化**: コンパイル・読み込みは初回実行時のみ
+3. **遅延初期化**: プリコンパイル済みバイナリ（`bin/swift-ime`）のパス解決は初回実行時のみ行いキャッシュする
 
 ### セキュリティ要件
 
@@ -114,16 +118,16 @@ nvim --headless -u tests/minimal_init.lua \
 
 ### 2. IME 自動切り替え
 
-**ファイル**: `lua/ime-auto/ime.lua`
+**ファイル**: `lua/ime-auto/ime.lua`（状態管理）、`lua/ime-auto/ime-platform.lua`（OS別コマンド実行）
 
 **最適化**:
-- **IME状態キャッシュ**: `cached_ime_state` テーブル（TTL: 500ms）
+- **IME状態キャッシュ**: `ime_state_cache` テーブル（TTL: 500ms）
 - **非同期IME切り替え**: `swift-ime-tool.lua` が `vim.system()` を使い、InsertEnter/InsertLeave の Swift バイナリ呼び出しをメインループ非ブロッキングで実行
 
-**プラットフォーム別実装**:
-- macOS: `swift-ime-tool.lua` 経由で Swift ツール呼び出し
-- Windows: PowerShell スクリプト実行（詳細は後述）
-- Linux: `fcitx-remote` または `ibus` コマンド実行
+**プラットフォーム別実装**（`ime-platform.lua`）:
+- macOS: `M.macos()` から `swift-ime-tool.lua` 経由で Swift ツール呼び出し
+- Windows: `M.windows()` から `windows-ime-tool.lua` 経由で PowerShell スクリプト実行
+- Linux: `M.linux()` から `linux-ime-tool.lua` 経由で `fcitx-remote` または `ibus` コマンド実行
 
 **Windows実装の詳細**: `windows-ime-tool.lua` と `powershell/ime-tool.ps1` を参照（Slot A/B方式、macOSと同様の設計）。
 
@@ -146,18 +150,19 @@ nvim --headless -u tests/minimal_init.lua \
 
 **ファイル**: `lua/ime-auto/swift-ime-tool.lua`
 
-**コンパイルフロー**:
+**バイナリ解決フロー（プリコンパイル済みUniversal Binary、v0.1.x以降）**:
 ```
 1. ensure_compiled() 呼び出し
-2. バイナリ存在チェック → mtime 比較
-3. Swift ソース読み込み → コピー
-4. swiftc コンパイル実行
+2. 既に解決済みパスが存在しファイル読み取り可能なら即 true を返す
+3. プラグインルート配下の bin/swift-ime（事前ビルド済みUniversal Binary）を探索
+   → 見つかれば swift_bin_path にキャッシュして true を返す
+4. 見つからない場合は false とエラーメッセージ（再インストール手順・
+   ./scripts/build-universal-binary.sh の案内・issue報告先）を返す
 ```
 
-**遅延コンパイル**:
-- 初回実行時のみコンパイル
-- mtime ベースで自動リコンパイル判定
-- エラー時は詳細なメッセージを表示
+**注意**: 現行実装は `swiftc` を一切呼び出さない。Swift ツールはリリース時に
+`scripts/build-universal-binary.sh` で事前ビルドされ `bin/swift-ime` としてプラグインに
+同梱される。実行時はこのバイナリの存在確認のみを行う（旧来のmtimeベース遅延コンパイル方式は廃止済み）。
 
 **IME切り替えの同期処理（v1.x.x以降）**:
 Carbon APIの`TISSelectInputSource()`は非同期のため、以下の対策を実装:
@@ -182,8 +187,8 @@ for _ in 0..<3 {
     }
 }
 
-// 4. 失敗時は警告を出力
-fputs("Warning: IME switch incomplete...", stderr)
+// 4. 失敗時は詳細ログを出力（debugLog経由でstderr、IME_AUTO_DEBUG=1時はログファイルにも出力）
+debugLog("[switchToInputSource] FAILED after all retries (target: \(targetID), current: \(currentID))")
 return false
 ```
 
@@ -234,8 +239,8 @@ Neovim/ターミナルアプリを許可することで付与できる。
 
 **パフォーマンス**:
 - 通常ケース: 50ms（1回の待機で完了）
-- 最悪ケース: 200ms（3回リトライ後に完了）
-- JISキーボード: +30ms（キーイベント送信）
+- 最悪ケース: 200ms（初回50ms + リトライ3回×50ms）
+- JISキーボード: +60ms（`sendKanaKey`/`sendEisuKey` は各 `usleep(10000)`（キー押下後10ms）+ `usleep(50000)`（キー解放後50ms、入力モード安定待ち）で構成）
 - 体感への影響: ほぼなし（人間の反応時間は200ms以上）
 ## 開発ワークフロー
 
@@ -311,11 +316,15 @@ Neovim/ターミナルアプリを許可することで付与できる。
 
 ### よくある問題
 
-**問題**: Swift コンパイルに失敗する
-**解決**: Xcode Command Line Tools をインストール
+**問題**: `bin/swift-ime` が見つからない（`ensure_compiled()` がエラーを返す）
+**原因**: 通常配布物には `bin/swift-ime`（プリコンパイル済みUniversal Binary）が同梱されているため
+発生しない想定だが、開発用チェックアウトやビルド漏れの場合に発生しうる
+**解決**: `./scripts/build-universal-binary.sh` を実行してバイナリを再生成する
+（内部で `swiftc` を使用するため、事前に Xcode Command Line Tools が必要）
 ```bash
 xcode-select --install
 swiftc --version
+./scripts/build-universal-binary.sh
 ```
 
 **問題**: IME が切り替わらない

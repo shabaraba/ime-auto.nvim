@@ -2,6 +2,7 @@
 --- @module ime-auto.ime
 
 local M = {}
+local platform = require("ime-auto.ime-platform")
 local utils = require("ime-auto.utils")
 
 local last_ime_state = nil
@@ -54,48 +55,6 @@ local function custom_status_to_boolean(result, pattern)
   return matched ~= nil
 end
 
-local function ime_control_macos(action)
-  local swift_tool = require("ime-auto.swift-ime-tool")
-
-  if action == "off" then
-    swift_tool.toggle_from_insert()
-  elseif action == "on" then
-    swift_tool.toggle_from_normal()
-  elseif action == "status" then
-    -- Trust the Swift tool's TIS-property-based (ASCII capable) judgment
-    -- instead of re-deriving it from the input source ID string.
-    return swift_tool.get_status()
-  end
-end
-
-local function ime_control_windows(action)
-  local windows_tool = require("ime-auto.windows-ime-tool")
-
-  if action == "off" then
-    return windows_tool.toggle_from_insert()
-  elseif action == "on" then
-    return windows_tool.toggle_from_normal()
-  elseif action == "status" then
-    local result = windows_tool.get_current()
-    if not result then return false end
-
-    -- Japanese language tag is 0411; any registered IME under it counts as active
-    return result:match("^0411:") ~= nil
-  end
-end
-
-local function ime_control_linux(action)
-  local linux_tool = require("ime-auto.linux-ime-tool")
-
-  if action == "off" then
-    return linux_tool.toggle_from_insert()
-  elseif action == "on" then
-    return linux_tool.toggle_from_normal()
-  elseif action == "status" then
-    return linux_tool.is_active()
-  end
-end
-
 function M.control(action)
   local config = require("ime-auto.config").get()
 
@@ -113,22 +72,22 @@ function M.control(action)
       return result
     end
   end
-  
+
   local os = config.os
   local result = nil
-  
+
   if os == "macos" then
-    result = ime_control_macos(action)
+    result = platform.macos(action)
   elseif os == "windows" then
-    result = ime_control_windows(action)
+    result = platform.windows(action)
   elseif os == "linux" then
-    result = ime_control_linux(action)
+    result = platform.linux(action)
   end
-  
+
   if config.debug then
     vim.notify(string.format("[ime-auto] IME %s on %s", action, os), vim.log.levels.DEBUG)
   end
-  
+
   return result
 end
 
