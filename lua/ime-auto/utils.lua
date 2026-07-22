@@ -21,9 +21,10 @@ function M.is_command_mode()
 end
 
 function M.notify(msg, level)
+  level = level or vim.log.levels.INFO
   local config = require("ime-auto.config").get()
   if config.debug or level >= vim.log.levels.WARN then
-    vim.notify("[ime-auto] " .. msg, level or vim.log.levels.INFO)
+    vim.notify("[ime-auto] " .. msg, level)
   end
 end
 
