@@ -55,13 +55,18 @@ local function ime_control_macos(action)
 end
 
 local function ime_control_windows(action)
+  local windows_tool = require("ime-auto.windows-ime-tool")
+
   if action == "off" then
-    return vim.fn.system([[powershell -Command "[System.Windows.Forms.SendKeys]::SendWait('{KANJI}')"]])
+    return windows_tool.toggle_from_insert()
   elseif action == "on" then
-    return vim.fn.system([[powershell -Command "[System.Windows.Forms.SendKeys]::SendWait('{KANJI}')"]])
+    return windows_tool.toggle_from_normal()
   elseif action == "status" then
-    local result = execute_command([[powershell -Command "Get-WinUserLanguageList | Where-Object {$_.LanguageTag -eq 'ja-JP'} | Select-Object -ExpandProperty InputMethodTips"]])
-    return result and result:match("0411:00000411") ~= nil
+    local result = windows_tool.get_current()
+    if not result then return false end
+
+    -- Japanese language tag is 0411; any registered IME under it counts as active
+    return result:match("^0411:") ~= nil
   end
 end
 
@@ -167,10 +172,14 @@ end
 function M.restore_state()
   local config = require("ime-auto.config").get()
 
-  -- macOS: Use slot-based management to restore Insert mode IME state
+  -- macOS/Windows: Use slot-based management to restore Insert mode IME state
   if config.os == "macos" then
     local swift_tool = require("ime-auto.swift-ime-tool")
     swift_tool.toggle_from_normal()
+    return
+  elseif config.os == "windows" then
+    local windows_tool = require("ime-auto.windows-ime-tool")
+    windows_tool.toggle_from_normal()
     return
   end
 

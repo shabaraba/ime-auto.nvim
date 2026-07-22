@@ -101,14 +101,37 @@ func isJISKeyboard() -> Bool {
     return false
 }
 
-// Check if an input source ID is a Japanese IME
-func isJapaneseIME(_ sourceID: String) -> Bool {
-    return sourceID.contains("Japanese") || sourceID.contains("Hiragana") || sourceID.contains("Katakana")
+// Get the generic input mode ID for a source (nil for plain keyboard layouts)
+func getInputModeID(_ source: TISInputSource) -> String? {
+    guard let modeIDPtr = TISGetInputSourceProperty(source, kTISPropertyInputModeID) else {
+        return nil
+    }
+    return Unmanaged<CFString>.fromOpaque(modeIDPtr).takeUnretainedValue() as String
 }
 
-// Check if an input source ID is ASCII-capable (English)
-func isEnglishIME(_ sourceID: String) -> Bool {
-    return sourceID.contains("ABC") || sourceID.contains("US") || sourceID.contains("keylayout")
+// Check whether a source produces ASCII characters directly (no IME conversion needed)
+func isASCIICapable(_ source: TISInputSource) -> Bool {
+    guard let capablePtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceIsASCIICapable) else {
+        return false
+    }
+    return Unmanaged<CFBoolean>.fromOpaque(capablePtr).takeUnretainedValue() == kCFBooleanTrue
+}
+
+// Check if an input source is a Japanese kana input mode (Hiragana/Katakana),
+// excluding ASCII-capable Roman/Eisu modes even when their ID contains "Japanese"
+func isJapaneseIME(_ source: TISInputSource) -> Bool {
+    if isASCIICapable(source) {
+        return false
+    }
+    guard let modeID = getInputModeID(source) else {
+        return false
+    }
+    return modeID.contains(".Japanese") || modeID.contains(".Katakana") || modeID.contains(".Hiragana")
+}
+
+// Check if an input source is ASCII-capable (English/Roman/Eisu)
+func isEnglishIME(_ source: TISInputSource) -> Bool {
+    return isASCIICapable(source)
 }
 
 // Switch to input source by ID, returns true on success
@@ -156,10 +179,10 @@ func switchToInputSource(_ targetID: String, forceInputMode: Bool = true) -> Boo
 
                 // Force input mode by sending key event (JIS keyboard only)
                 if forceInputMode && isJISKeyboard() {
-                    if isJapaneseIME(targetID) {
+                    if isJapaneseIME(source) {
                         debugLog("[switchToInputSource] JIS keyboard detected - Sending Kana key to force Hiragana mode")
                         sendKanaKey()
-                    } else if isEnglishIME(targetID) {
+                    } else if isEnglishIME(source) {
                         debugLog("[switchToInputSource] JIS keyboard detected - Sending Eisu key to force English mode")
                         sendEisuKey()
                     }
