@@ -147,9 +147,19 @@ func isASCIICapable(_ source: TISInputSource) -> Bool {
     return boolInputSourceProperty(source, kTISPropertyInputSourceIsASCIICapable)
 }
 
+// Meltype reports its Japanese mode as ASCII-capable, so the ASCII-capable
+// property cannot be used to tell it apart from a plain keyboard layout.
+func isMeltypeSource(_ sourceID: String?) -> Bool {
+    guard let sourceID = sourceID else { return false }
+    return sourceID.hasPrefix("io.github.yksr-melt.inputmethod.Meltype")
+}
+
 // Check if an input source is a Japanese kana input mode (Hiragana/Katakana),
 // excluding ASCII-capable Roman/Eisu modes even when their ID contains "Japanese"
 func isJapaneseIME(_ source: TISInputSource) -> Bool {
+    if isMeltypeSource(inputSourceProperty(source, kTISPropertyInputSourceID)) {
+        return true
+    }
     if isASCIICapable(source) {
         return false
     }
@@ -169,6 +179,9 @@ func isEnglishIME(_ source: TISInputSource) -> Bool {
 // composition, so it counts as "IME on" regardless of its ID string.
 func isCurrentSourceASCIICapable() -> Bool {
     let current = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
+    if isMeltypeSource(inputSourceProperty(current, kTISPropertyInputSourceID)) {
+        return false
+    }
     return isASCIICapable(current)
 }
 
