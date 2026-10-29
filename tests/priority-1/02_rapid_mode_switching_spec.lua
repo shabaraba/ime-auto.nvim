@@ -124,6 +124,7 @@ describe("Test 02: Rapid mode switching", function()
       ime.control = function(action)
         if action == "status" then
           call_count = call_count + 1
+          return true
         end
         return original_control(action)
       end
