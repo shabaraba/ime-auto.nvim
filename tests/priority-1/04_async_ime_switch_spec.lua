@@ -28,6 +28,8 @@ describe("Test 04: Asynchronous IME switching", function()
   end)
 
   after_each(function()
+    -- Let queued commands finish against the mock before restoring the real vim.system
+    vim.wait(100, function() return false end)
     vim.system = original_system
     pcall(vim.cmd, "bdelete!")
   end)

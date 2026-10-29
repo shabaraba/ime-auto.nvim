@@ -44,6 +44,30 @@ describe("Test 04: swift-ime-tool async command serialization", function()
     finish_next()
   end)
 
+  it("should recover and keep draining when the process fails to start", function()
+    local original_notify = vim.notify
+    vim.notify = function() end
+    vim.system = function() error("spawn failed") end
+
+    local result
+    swift_ime_tool.toggle_from_insert(function(success) result = success end)
+    vim.wait(50, function() return result ~= nil end)
+
+    vim.notify = original_notify
+    assert.is_false(result)
+
+    vim.system = function(argv, _, on_exit)
+      table.insert(started, argv[2])
+      table.insert(pending_exits, function() on_exit({ stdout = "", code = 0 }) end)
+    end
+    swift_ime_tool.toggle_from_normal()
+
+    assert.are.equal(1, #started)
+    assert.are.equal("toggle-from-normal", started[1])
+
+    finish_next()
+  end)
+
   it("should keep draining the queue when a callback raises", function()
     swift_ime_tool.toggle_from_insert(function() error("boom") end)
     swift_ime_tool.toggle_from_normal()

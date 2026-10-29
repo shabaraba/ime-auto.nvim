@@ -74,16 +74,25 @@ local function drain_async_queue()
     return
   end
 
+  local function finish(stdout, success)
+    async_running = false
+    if job.callback then
+      pcall(job.callback, stdout, success)
+    end
+    drain_async_queue()
+  end
+
   async_running = true
-  vim.system(build_argv(job.args), { text = true, env = build_env() }, function(result)
+  local started, err = pcall(vim.system, build_argv(job.args), { text = true, env = build_env() }, function(result)
     vim.schedule(function()
-      async_running = false
-      if job.callback then
-        pcall(job.callback, result.stdout, result.code == 0)
-      end
-      drain_async_queue()
+      finish(result.stdout, result.code == 0)
     end)
   end)
+
+  if not started then
+    vim.notify("[ime-auto] Failed to start Swift IME tool: " .. tostring(err), vim.log.levels.ERROR)
+    finish(nil, false)
+  end
 end
 
 -- Asynchronous invocation for hot-path callers (InsertEnter/InsertLeave) that
