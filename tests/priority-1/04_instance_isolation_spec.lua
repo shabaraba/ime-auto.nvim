@@ -25,6 +25,7 @@ describe("Test 04: Slot file instance isolation", function()
   end)
 
   after_each(function()
+    vim.wait(20, function() return false end)
     vim.system = original_system
   end)
 

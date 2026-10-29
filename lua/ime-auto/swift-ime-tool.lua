@@ -62,8 +62,44 @@ local function run_swift_command(args)
   return result.stdout, result.code == 0
 end
 
+local async_queue = {}
+local async_running = false
+
+local function drain_async_queue()
+  if async_running then
+    return
+  end
+  local job = table.remove(async_queue, 1)
+  if not job then
+    return
+  end
+
+  local function finish(stdout, success)
+    async_running = false
+    if job.callback then
+      pcall(job.callback, stdout, success)
+    end
+    drain_async_queue()
+  end
+
+  async_running = true
+  local started, err = pcall(vim.system, build_argv(job.args), { text = true, env = build_env() }, function(result)
+    vim.schedule(function()
+      finish(result.stdout, result.code == 0)
+    end)
+  end)
+
+  if not started then
+    vim.notify("[ime-auto] Failed to start Swift IME tool: " .. tostring(err), vim.log.levels.ERROR)
+    finish(nil, false)
+  end
+end
+
 -- Asynchronous invocation for hot-path callers (InsertEnter/InsertLeave) that
--- must not block the main loop while the Swift binary switches IME state
+-- must not block the main loop while the Swift binary switches IME state.
+-- Commands run one at a time in call order: overlapping processes would read
+-- the current input source before the previous switch finished and corrupt
+-- the slot files.
 local function run_swift_command_async(args, callback)
   local ok, err = M.ensure_compiled()
   if not ok then
@@ -76,14 +112,8 @@ local function run_swift_command_async(args, callback)
     return
   end
 
-  vim.system(build_argv(args), { text = true, env = build_env() }, function(result)
-    if not callback then
-      return
-    end
-    vim.schedule(function()
-      callback(result.stdout, result.code == 0)
-    end)
-  end)
+  table.insert(async_queue, { args = args, callback = callback })
+  drain_async_queue()
 end
 
 -- Get plugin root directory
