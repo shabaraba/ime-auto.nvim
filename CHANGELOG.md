@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/shabaraba/ime-auto.nvim/compare/v0.1.4...v0.1.5) (2026-10-29)
+
+
+### Bug Fixes
+
+* Serialize async Swift IME commands to prevent overlapping toggles ([#67](https://github.com/shabaraba/ime-auto.nvim/issues/67)) ([1a20117](https://github.com/shabaraba/ime-auto.nvim/commit/1a20117b6d39b3b56b0e61363baa16107753bbfc))
+
 ## [0.1.4](https://github.com/shabaraba/ime-auto.nvim/compare/v0.1.3...v0.1.4) (2026-07-22)
 
 
