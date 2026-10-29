@@ -200,8 +200,10 @@ enum InputSourceSwitchResult {
 }
 
 // Switch to input source by ID, returns the outcome of the attempt
-// Also sends appropriate key event to force input mode (English/Japanese)
-func switchToInputSource(_ targetID: String, forceInputMode: Bool = true) -> InputSourceSwitchResult {
+// Also sends appropriate key event to force input mode (English/Japanese).
+// forceEnglishInput sends Eisu for Meltype, which is classified as Japanese but
+// whose internal mode the slot cannot store (used when restoring the Normal slot).
+func switchToInputSource(_ targetID: String, forceInputMode: Bool = true, forceEnglishInput: Bool = false) -> InputSourceSwitchResult {
     guard let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] else {
         debugLog("[switchToInputSource] Failed to get input source list")
         return .notFound
@@ -256,11 +258,12 @@ func switchToInputSource(_ targetID: String, forceInputMode: Bool = true) -> Inp
         }
 
         // Force input mode by sending key event (JIS keyboard only)
+        let sendEisuForMeltype = forceEnglishInput && isMeltypeSource(id)
         if forceInputMode && isJISKeyboard() {
-            if isJapaneseIME(source) {
+            if !sendEisuForMeltype && isJapaneseIME(source) {
                 debugLog("[switchToInputSource] JIS keyboard detected - Sending Kana key to force Hiragana mode")
                 sendKey(kVKJISKana)
-            } else if isEnglishIME(source) {
+            } else if sendEisuForMeltype || isEnglishIME(source) {
                 debugLog("[switchToInputSource] JIS keyboard detected - Sending Eisu key to force English mode")
                 sendKey(kVKJISEisu)
             }
@@ -383,7 +386,7 @@ func toggle(saveTo: String, restoreFrom: String, fallback: String?, instanceID: 
 
     debugLog("[DEBUG] toggle(saveTo: \(saveTo)): target=\(targetID)\n")
 
-    let switchResult = switchToInputSource(targetID)
+    let switchResult = switchToInputSource(targetID, forceEnglishInput: restoreFrom == "b")
     if switchResult == .success {
         let actualID = getCurrentInputSourceID()
         debugLog("[DEBUG] toggle(saveTo: \(saveTo)): switched to \(actualID ?? "nil")\n")
