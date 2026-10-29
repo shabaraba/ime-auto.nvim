@@ -7,12 +7,18 @@ local swift_tool = require("ime-auto.swift-ime-tool")
 
 describe("Test 04: Asynchronous IME switching", function()
   local original_system
+  local pending_commands
 
   before_each(function()
     original_system = vim.system
+    pending_commands = 0
     vim.system = function(_, _, on_exit)
+      pending_commands = pending_commands + 1
       vim.defer_fn(function()
         on_exit({ stdout = "", code = 0 })
+        vim.schedule(function()
+          pending_commands = pending_commands - 1
+        end)
       end, 10)
       return { wait = function() return { stdout = "", code = 0 } end }
     end
@@ -28,8 +34,10 @@ describe("Test 04: Asynchronous IME switching", function()
   end)
 
   after_each(function()
-    -- Let queued commands finish against the mock before restoring the real vim.system
-    vim.wait(100, function() return false end)
+    assert.is_true(
+      vim.wait(1000, function() return pending_commands == 0 end, 10),
+      "queued commands should finish against the mock before restoring vim.system"
+    )
     vim.system = original_system
     pcall(vim.cmd, "bdelete!")
   end)
