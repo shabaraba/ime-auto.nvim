@@ -147,9 +147,19 @@ func isASCIICapable(_ source: TISInputSource) -> Bool {
     return boolInputSourceProperty(source, kTISPropertyInputSourceIsASCIICapable)
 }
 
+// Meltype reports its Japanese mode as ASCII-capable, so the ASCII-capable
+// property cannot be used to tell it apart from a plain keyboard layout.
+func isMeltypeSource(_ sourceID: String?) -> Bool {
+    guard let sourceID = sourceID else { return false }
+    return sourceID.hasPrefix("io.github.yksr-melt.inputmethod.Meltype")
+}
+
 // Check if an input source is a Japanese kana input mode (Hiragana/Katakana),
 // excluding ASCII-capable Roman/Eisu modes even when their ID contains "Japanese"
 func isJapaneseIME(_ source: TISInputSource) -> Bool {
+    if isMeltypeSource(inputSourceProperty(source, kTISPropertyInputSourceID)) {
+        return true
+    }
     if isASCIICapable(source) {
         return false
     }
@@ -169,6 +179,9 @@ func isEnglishIME(_ source: TISInputSource) -> Bool {
 // composition, so it counts as "IME on" regardless of its ID string.
 func isCurrentSourceASCIICapable() -> Bool {
     let current = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
+    if isMeltypeSource(inputSourceProperty(current, kTISPropertyInputSourceID)) {
+        return false
+    }
     return isASCIICapable(current)
 }
 
@@ -187,8 +200,10 @@ enum InputSourceSwitchResult {
 }
 
 // Switch to input source by ID, returns the outcome of the attempt
-// Also sends appropriate key event to force input mode (English/Japanese)
-func switchToInputSource(_ targetID: String, forceInputMode: Bool = true) -> InputSourceSwitchResult {
+// Also sends appropriate key event to force input mode (English/Japanese).
+// forceEnglishInput sends Eisu for Meltype, which is classified as Japanese but
+// whose internal mode the slot cannot store (used when restoring the Normal slot).
+func switchToInputSource(_ targetID: String, forceInputMode: Bool = true, forceEnglishInput: Bool = false) -> InputSourceSwitchResult {
     guard let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] else {
         debugLog("[switchToInputSource] Failed to get input source list")
         return .notFound
@@ -243,11 +258,12 @@ func switchToInputSource(_ targetID: String, forceInputMode: Bool = true) -> Inp
         }
 
         // Force input mode by sending key event (JIS keyboard only)
+        let sendEisuForMeltype = forceEnglishInput && isMeltypeSource(id)
         if forceInputMode && isJISKeyboard() {
-            if isJapaneseIME(source) {
+            if !sendEisuForMeltype && isJapaneseIME(source) {
                 debugLog("[switchToInputSource] JIS keyboard detected - Sending Kana key to force Hiragana mode")
                 sendKey(kVKJISKana)
-            } else if isEnglishIME(source) {
+            } else if sendEisuForMeltype || isEnglishIME(source) {
                 debugLog("[switchToInputSource] JIS keyboard detected - Sending Eisu key to force English mode")
                 sendKey(kVKJISEisu)
             }
@@ -370,7 +386,7 @@ func toggle(saveTo: String, restoreFrom: String, fallback: String?, instanceID: 
 
     debugLog("[DEBUG] toggle(saveTo: \(saveTo)): target=\(targetID)\n")
 
-    let switchResult = switchToInputSource(targetID)
+    let switchResult = switchToInputSource(targetID, forceEnglishInput: restoreFrom == "b")
     if switchResult == .success {
         let actualID = getCurrentInputSourceID()
         debugLog("[DEBUG] toggle(saveTo: \(saveTo)): switched to \(actualID ?? "nil")\n")
