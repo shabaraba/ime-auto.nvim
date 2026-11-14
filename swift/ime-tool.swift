@@ -75,19 +75,24 @@ func checkAccessibilityPermission() -> Bool {
 let kVKJISEisu: CGKeyCode = 0x66
 let kVKJISKana: CGKeyCode = 0x68
 
-// Send a key event (key down + up) to force an input mode switch
-func sendKey(_ code: CGKeyCode) {
-    guard checkAccessibilityPermission() else { return }
+// Send a key event (key down + up) to force an input mode switch.
+// Modifier flags are cleared so held physical modifiers are not merged into
+// the synthetic key. Returns false when the event could not be posted.
+func sendKey(_ code: CGKeyCode) -> Bool {
+    guard checkAccessibilityPermission() else { return false }
 
     if let keyDownEvent = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true) {
+        keyDownEvent.flags = []
         keyDownEvent.post(tap: .cghidEventTap)
     }
     usleep(10000) // 10ms
 
     if let keyUpEvent = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false) {
+        keyUpEvent.flags = []
         keyUpEvent.post(tap: .cghidEventTap)
     }
     usleep(50000) // 50ms for the input mode to settle
+    return true
 }
 
 // Check if an input source ID matches a known Kotoeri Japanese variant
@@ -197,6 +202,59 @@ enum InputSourceSwitchResult {
     case notFound
     case notSelectable
     case switchFailed
+    case modeNotApplied
+}
+
+let modeForceMaxAttempts = 3
+let modeVerifyPolls = 3
+
+// Poll briefly for the ASCII-capable state to reach the expected value, since
+// the input mode settles asynchronously after the key event
+func waitForASCIIState(_ expectASCII: Bool) -> Bool {
+    for poll in 0..<modeVerifyPolls {
+        if isCurrentSourceASCIICapable() == expectASCII {
+            return true
+        }
+        if poll < modeVerifyPolls - 1 {
+            usleep(30000) // 30ms
+        }
+    }
+    return false
+}
+
+// Force the input mode (Hiragana/English) with Kana/Eisu key events on JIS
+// keyboards and verify it through the ASCII-capable property, resending the
+// key (and reselecting the source if it drifted) when verification fails.
+// Meltype is exempt from verification: it always reports non-ASCII-capable.
+func forceInputModeOnJIS(_ source: TISInputSource, targetID: String, forceEnglishInput: Bool) -> Bool {
+    let sendEisuForMeltype = forceEnglishInput && isMeltypeSource(targetID)
+    let key: CGKeyCode
+    if !sendEisuForMeltype && isJapaneseIME(source) {
+        key = kVKJISKana
+    } else if sendEisuForMeltype || isEnglishIME(source) {
+        key = kVKJISEisu
+    } else {
+        return true
+    }
+
+    let expectASCII = key == kVKJISEisu
+    let verifiable = !isMeltypeSource(targetID)
+
+    for attempt in 0..<modeForceMaxAttempts {
+        if attempt > 0, getCurrentInputSourceID() != targetID {
+            debugLog("[forceInputMode] Source drifted to \(getCurrentInputSourceID() ?? "nil"), reselecting \(targetID)")
+            TISSelectInputSource(source)
+            usleep(50000)
+        }
+
+        debugLog("[forceInputMode] Sending \(expectASCII ? "Eisu" : "Kana") key (attempt \(attempt + 1))")
+        guard sendKey(key) else { return true }
+        if !verifiable || waitForASCIIState(expectASCII) {
+            return true
+        }
+        debugLog("[forceInputMode] Mode not applied after attempt \(attempt + 1) (expectASCII=\(expectASCII))")
+    }
+    return false
 }
 
 // Switch to input source by ID, returns the outcome of the attempt
@@ -258,16 +316,14 @@ func switchToInputSource(_ targetID: String, forceInputMode: Bool = true, forceE
         }
 
         // Force input mode by sending key event (JIS keyboard only)
-        let sendEisuForMeltype = forceEnglishInput && isMeltypeSource(id)
-        if forceInputMode && isJISKeyboard() {
-            if !sendEisuForMeltype && isJapaneseIME(source) {
-                debugLog("[switchToInputSource] JIS keyboard detected - Sending Kana key to force Hiragana mode")
-                sendKey(kVKJISKana)
-            } else if sendEisuForMeltype || isEnglishIME(source) {
-                debugLog("[switchToInputSource] JIS keyboard detected - Sending Eisu key to force English mode")
-                sendKey(kVKJISEisu)
+        guard forceInputMode else { return .success }
+
+        if isJISKeyboard() {
+            if !forceInputModeOnJIS(source, targetID: id, forceEnglishInput: forceEnglishInput) {
+                debugLog("[switchToInputSource] Input mode not applied for \(id) after \(modeForceMaxAttempts) attempts")
+                return .modeNotApplied
             }
-        } else if forceInputMode && !isJISKeyboard() {
+        } else {
             debugLog("[switchToInputSource] Non-JIS keyboard detected - Skipping key event (not needed)")
         }
 
@@ -292,6 +348,8 @@ func switchFailureMessage(_ result: InputSourceSwitchResult, targetID: String) -
         return "Error: Input source found but cannot be selected (disabled or select-incapable): \(targetID)\n"
     case .switchFailed:
         return "Error: Failed to switch to input source: \(targetID)\n"
+    case .modeNotApplied:
+        return "Error: Switched to \(targetID) but the input mode (Hiragana/English) was not applied\n"
     }
 }
 
@@ -371,12 +429,19 @@ func toggle(saveTo: String, restoreFrom: String, fallback: String?, instanceID: 
 
     debugLog("[DEBUG] toggle(saveTo: \(saveTo)): current=\(currentID)\n")
 
-    do {
-        try writeToSlot(currentID, slot: saveTo, instanceID: instanceID)
-        debugLog("[DEBUG] toggle(saveTo: \(saveTo)): saved to slot \(saveTo)=\(currentID)\n")
-    } catch {
-        debugLog("Error: Failed to write slot \(saveTo): \(error.localizedDescription)\n")
-        exit(1)
+    // Slot A holds the Insert-mode IME. Saving an ASCII source there (e.g. when
+    // InsertLeave fires after a failed switch) would make every later
+    // InsertEnter restore ABC, so the previous value is kept instead.
+    if saveTo == "a" && isCurrentSourceASCIICapable() {
+        debugLog("[DEBUG] toggle(saveTo: a): current=\(currentID) is ASCII, keeping existing slot A\n")
+    } else {
+        do {
+            try writeToSlot(currentID, slot: saveTo, instanceID: instanceID)
+            debugLog("[DEBUG] toggle(saveTo: \(saveTo)): saved to slot \(saveTo)=\(currentID)\n")
+        } catch {
+            debugLog("Error: Failed to write slot \(saveTo): \(error.localizedDescription)\n")
+            exit(1)
+        }
     }
 
     guard let targetID = readFromSlot(restoreFrom, instanceID: instanceID) ?? fallback else {
